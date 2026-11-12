@@ -298,8 +298,9 @@ def latest_notifications():
  try: after_id=max(0,int(after))
  except (TypeError,ValueError): after_id=0
  with conn() as d:
+  latest_id=d.execute("SELECT COALESCE(MAX(id),0) FROM notifications WHERE recipient_user_id=?",(u["id"],)).fetchone()[0]
   rows=d.execute("SELECT id,message,created_at FROM notifications WHERE recipient_user_id=? AND id>? ORDER BY id ASC LIMIT 20",(u["id"],after_id)).fetchall()
- return {"notifications":[{"id":r["id"],"message":r["message"],"created_at":r["created_at"]} for r in rows]}
+ return {"latest_id":latest_id,"notifications":[{"id":r["id"],"message":r["message"],"created_at":r["created_at"]} for r in rows]}
 
 # Browser notifications work only after permission is granted and while the app is open.
 SHELL = SHELL.replace("</body>", """<script>
@@ -320,13 +321,13 @@ SHELL = SHELL.replace("</body>", """<script>
       const response=await fetch('/api/notifications/latest?after='+lastId,{cache:'no-store'});
       if(!response.ok) return;
       const data=await response.json();
+      if(!ready){lastId=Math.max(lastId,data.latest_id||0);ready=true;return;}
       for(const item of data.notifications||[]){
         lastId=Math.max(lastId,item.id);
-        if(ready && 'Notification' in window && Notification.permission==='granted'){
+        if('Notification' in window && Notification.permission==='granted'){
           new Notification('Scholar Tracker', {body:item.message,tag:'scholar-'+item.id});
         }
       }
-      ready=true;
     }catch(error){ /* Keep the app usable if notifications are unavailable. */ }
   }
   if(document.querySelector('a[href*="/notifications"]')){poll();setInterval(poll,30000);}
