@@ -1,0 +1,19 @@
+{
+  "name": "Scholar Tracker",
+  "short_name": "Scholar Tracker",
+  "description": "School attendance, calendar and parent communication.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5f7fb",
+  "theme_color": "#4263eb",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
