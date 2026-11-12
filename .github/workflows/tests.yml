@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/full-school-management
+      - fix/production-security
   pull_request:
     branches:
       - main
