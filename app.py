@@ -129,8 +129,8 @@ def home():
     q=",".join("?"*len(classes)); students=d.execute("SELECT COUNT(*) FROM students WHERE active=1 AND class_name IN ("+q+")",classes).fetchone()[0]
     stats={x["status"]:x["n"] for x in d.execute("SELECT status,COUNT(*) n FROM attendance a JOIN students s ON s.id=a.student_id WHERE lesson_date=? AND s.class_name IN ("+q+") GROUP BY status",[today]+classes).fetchall()}
    if current_lesson:
-    msg=f"Lesson in progress: {current_lesson['subject']} for {current_lesson['class_name']} ({current_lesson['start_time']}-{current_lesson['end_time']})."
-    exists=d.execute("SELECT 1 FROM notifications WHERE recipient_user_id=? AND message=? AND created_at LIKE ?",(u["id"],msg,today+"%")).fetchone()
+    msg=f"Lesson in progress today ({today}): {current_lesson['subject']} for {current_lesson['class_name']} ({current_lesson['start_time']}-{current_lesson['end_time']})."
+    exists=d.execute("SELECT 1 FROM notifications WHERE recipient_user_id=? AND message=?",(u["id"],msg)).fetchone()
     if not exists:
      ncols={x["name"] for x in d.execute("PRAGMA table_info(notifications)")}
      if "recipient" in ncols: d.execute("INSERT INTO notifications(recipient,recipient_user_id,message) VALUES(?,?,?)",(u["username"],u["id"],msg))
@@ -350,7 +350,10 @@ def latest_notifications():
  except (TypeError,ValueError): after_id=0
  with conn() as d:
   latest_id=d.execute("SELECT COALESCE(MAX(id),0) FROM notifications WHERE recipient_user_id=?",(u["id"],)).fetchone()[0]
-  rows=d.execute("SELECT id,message,created_at FROM notifications WHERE recipient_user_id=? AND id>? ORDER BY id ASC LIMIT 20",(u["id"],after_id)).fetchall()
+  if after_id==0:
+   rows=d.execute("SELECT id,message,created_at FROM (SELECT id,message,created_at FROM notifications WHERE recipient_user_id=? ORDER BY id DESC LIMIT 20) ORDER BY id ASC",(u["id"],)).fetchall()
+  else:
+   rows=d.execute("SELECT id,message,created_at FROM notifications WHERE recipient_user_id=? AND id>? ORDER BY id ASC LIMIT 20",(u["id"],after_id)).fetchall()
  return {"latest_id":latest_id,"notifications":[{"id":r["id"],"message":r["message"],"created_at":r["created_at"]} for r in rows]}
 
 # Browser notifications work only after permission is granted and while the app is open.
