@@ -72,6 +72,23 @@ def init_db():
         if not demo_user:
             db.execute("INSERT INTO teacher_users(username,teacher_name,password_hash) VALUES(?,?,?)",
                        ("teacher", "Demo Teacher", generate_password_hash("Demo123!")))
+        # Seed clearly labelled demo lessons only when the timetable is empty.
+        # These entries make the demo teacher portal testable without pretending
+        # to represent a real school's timetable.
+        timetable_count = db.execute("SELECT COUNT(*) FROM teacher_timetable").fetchone()[0]
+        if timetable_count == 0:
+            db.executemany(
+                """INSERT INTO teacher_timetable
+                   (weekday, period, start_time, end_time, teacher_name, subject, class_name, stream, room)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                [
+                    ("Monday", 1, "09:00", "10:00", "Demo Teacher", "Computer Science", "Form 1", "A", "Computer Lab"),
+                    ("Tuesday", 1, "09:00", "10:00", "Demo Teacher", "Computer Science", "Form 1", "A", "Computer Lab"),
+                    ("Wednesday", 1, "09:00", "10:00", "Demo Teacher", "Computer Science", "Form 1", "A", "Computer Lab"),
+                    ("Thursday", 1, "09:00", "10:00", "Demo Teacher", "Computer Science", "Form 1", "A", "Computer Lab"),
+                    ("Friday", 1, "09:00", "10:00", "Demo Teacher", "Computer Science", "Form 1", "A", "Computer Lab"),
+                ],
+            )
         count = db.execute("SELECT COUNT(*) FROM students").fetchone()[0]
         if count == 0:
             db.executemany(
