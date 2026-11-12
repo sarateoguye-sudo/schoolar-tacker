@@ -126,7 +126,7 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 @media(max-width:520px){header{align-items:flex-start;flex-direction:column;gap:6px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.card,.panel{padding:16px}.metric{font-size:1.8rem}main{padding:22px 13px}nav a{padding:8px}}
 </style></head><body>
 <header><div><strong>School management</strong><br><span>Welcome to your Scholar Tracker workspace</span></div><span>● Demo workspace · Sample data</span></header>
-<nav><a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('teacher_login') }}">Teacher portal login</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for(&quot;parent_calendar&quot;) }}">Parent calendar view</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a></nav>
+<nav><a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('teacher_login') }}">Teacher portal login</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('parent_calendar') }}">Parent calendar view</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a></nav>
 <main>
 {% for message in get_flashed_messages() %}<div class="flash">{{ message }}</div>{% endfor %}
 {{ body|safe }}
