@@ -79,6 +79,8 @@ class ScholarTrackerTests(unittest.TestCase):
                 db.execute("DELETE FROM users WHERE role='admin'")
             scholar.APP_ENV = "production"
             os.environ["SETUP_TOKEN"] = "expected-test-token"
+            with self.client.session_transaction() as sess:
+                sess["csrf"] = "test-csrf-token"
             response = self.client.post(
                 "/setup",
                 data={
