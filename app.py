@@ -157,11 +157,8 @@ def init_db():
 PAGE = """
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
 <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
 <meta name="theme-color" content="#4263eb">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Scholar Tracker">
 <title>{{ title }} · Scholar Tracker</title>
 <style>
 :root{--ink:#17243b;--muted:#7b879c;--blue:#4263eb;--blue-soft:#edf1ff;--bg:#f5f7fb;--line:#e8ecf4;--white:#fff;--green:#13a879;--shadow:0 8px 30px rgba(27,45,84,.055)}
@@ -187,10 +184,10 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 @media(max-width:850px){header{margin-left:0;height:auto;min-height:72px;padding:18px 20px}nav{position:relative;width:auto;top:auto;bottom:auto;padding:10px 14px;flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}nav:before{width:100%;padding:4px 8px 8px}nav:after{display:none}nav a{font-size:.82rem;padding:9px 10px}main{margin:0;padding:26px 18px;min-height:auto}footer{margin-left:0;padding:18px} }
 @media(max-width:520px){header{align-items:flex-start;flex-direction:column;gap:6px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.card,.panel{padding:16px}.metric{font-size:1.8rem}main{padding:22px 13px}nav a{padding:8px}}
 </style></head><body>
-<header><div><strong>School management</strong><br><span>Welcome to your Scholar Tracker workspace</span></div><div class="app-install-area"><button class="install-app" id="installAppButton" type="button" hidden>Install app</button><span class="app-install-status" id="appInstallStatus">Add to home screen from your browser menu</span><span>● Demo workspace · Sample data</span></div></header>
+<header><div><strong>School management</strong><br><span>Welcome to your Scholar Tracker workspace</span></div><div><span>● Demo workspace · Sample data</span></div></header>
 <nav>
 {% if session.get('role') == 'admin' %}
-<a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('admin_teachers') }}">Teacher accounts</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a><form method="post" action="{{ url_for('admin_logout') }}"><button type="submit">Admin logout</button></form>
+<a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('admin_teachers') }}">Teacher accounts</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a><a href="{{ url_for('attendance_risk') }}">Attendance follow-up</a><a href="{{ url_for('unmarked_registers') }}">Unmarked registers</a><a href="{{ url_for('school_notices') }}">School notices</a><a href="{{ url_for('champion_tasks') }}">Champion tasks</a><a href="{{ url_for('audit_log') }}">Audit log</a><form method="post" action="{{ url_for('admin_logout') }}"><button type="submit">Admin logout</button></form>
 {% elif session.get('role') == 'teacher' %}
 <a href="{{ url_for('teacher_portal') }}">My lessons</a><form method="post" action="{{ url_for('teacher_logout') }}"><button type="submit">Teacher logout</button></form>
 {% else %}
@@ -201,45 +198,7 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 <main>
 {% for message in get_flashed_messages() %}<div class="flash">{{ message }}</div>{% endfor %}
 {{ body|safe }}
-</main><footer>Scholar Tracker · Built as a learning prototype for school attendance management.</footer>
-<script>
-(function () {
-  const button = document.getElementById("installAppButton");
-  const status = document.getElementById("appInstallStatus");
-  let installPrompt = null;
-
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", function () {
-      navigator.serviceWorker.register("/static/sw.js").catch(function () {
-        if (status) status.textContent = "Install from your browser menu when available";
-      });
-    });
-  }
-
-  window.addEventListener("beforeinstallprompt", function (event) {
-    event.preventDefault();
-    installPrompt = event;
-    if (button) button.hidden = false;
-    if (status) status.textContent = "Install Scholar Tracker on this device";
-  });
-
-  if (button) button.addEventListener("click", async function () {
-    if (!installPrompt) {
-      if (status) status.textContent = "On your browser menu, choose Install app or Add to Home screen";
-      return;
-    }
-    installPrompt.prompt();
-    await installPrompt.userChoice;
-    installPrompt = null;
-    button.hidden = true;
-  });
-
-  window.addEventListener("appinstalled", function () {
-    if (button) button.hidden = true;
-    if (status) status.textContent = "Scholar Tracker is installed";
-  });
-})();
-</script></body></html>
+</main><footer>Scholar Tracker · Built as a learning prototype for school attendance management.</footer></body></html>
 """
 
 def page(title, body, **context):
@@ -447,10 +406,14 @@ def teacher_register(lesson_id):
                 status = request.form.get("status_" + str(student["id"]), "Absent")
                 if status not in ("Present", "Absent", "Late"):
                     status = "Absent"
-                db.execute("""INSERT INTO attendance(student_id,lesson_date,subject,status,marked_by)
-                              VALUES(?,?,?,?,?) ON CONFLICT(student_id,lesson_date,subject)
-                              DO UPDATE SET status=excluded.status,marked_by=excluded.marked_by""",
-                           (student["id"], chosen_date, lesson["subject"], status, teacher_name))
+                reason_code = request.form.get("reason_" + str(student["id"]), "Unknown")
+                allowed_reasons = {"Illness", "Family responsibility", "Transport problem", "Fees-related issue", "School anxiety or bullying concern", "Unknown / needs follow-up"}
+                if status != "Absent" or reason_code not in allowed_reasons:
+                    reason_code = "Unknown / needs follow-up"
+                db.execute("""INSERT INTO attendance(student_id,lesson_date,subject,status,marked_by,reason_code)
+                              VALUES(?,?,?,?,?,?) ON CONFLICT(student_id,lesson_date,subject)
+                              DO UPDATE SET status=excluded.status,marked_by=excluded.marked_by,reason_code=excluded.reason_code""",
+                           (student["id"], chosen_date, lesson["subject"], status, teacher_name, reason_code))
                 # Record an in-app demo alert when a teacher marks a learner absent.
                 # This is a notification log only; it does not send SMS/email/push messages.
                 if status == "Absent":
@@ -481,8 +444,9 @@ def teacher_register(lesson_id):
     <h1>Mark class register</h1><p class="muted">{{lesson.subject}} · {{lesson.class_name}} / {{lesson.stream}} · {{lesson.start_time}}–{{lesson.end_time}}</p>
     <section class="panel"><form method="get"><div class="field"><label>Lesson date</label><input type="date" name="lesson_date" value="{{chosen_date}}" required></div><button>Load date</button></form></section>
     {% if students %}<form method="post"><input type="hidden" name="lesson_date" value="{{chosen_date}}">
-      <div class="table-wrap"><table><tr><th>Admission no.</th><th>Student</th><th>Attendance</th></tr>
-      {% for s in students %}<tr><td>{{s.admission_no}}</td><td>{{s.full_name}}</td><td><select name="status_{{s.id}}">{% for status in ['Present','Absent','Late'] %}<option {% if saved_map.get(s.id,'Present')==status %}selected{% endif %}>{{status}}</option>{% endfor %}</select></td></tr>{% endfor %}</table></div>
+      <p><button type="button" onclick="document.querySelectorAll('[name^=status_]').forEach(function(x){x.value='Present'})">Mark all present</button> <span class="muted">Review any absent or late learners before saving.</span></p>
+      <div class="table-wrap"><table><tr><th>Admission no.</th><th>Student</th><th>Attendance</th><th>Confidential reason category (absent only)</th></tr>
+      {% for s in students %}<tr><td>{{s.admission_no}}</td><td>{{s.full_name}}</td><td><select name="status_{{s.id}}">{% for status in ['Present','Absent','Late'] %}<option {% if saved_map.get(s.id,'Present')==status %}selected{% endif %}>{{status}}</option>{% endfor %}</select></td><td><select name="reason_{{s.id}}"><option>Unknown / needs follow-up</option><option>Illness</option><option>Family responsibility</option><option>Transport problem</option><option>Fees-related issue</option><option>School anxiety or bullying concern</option></select></td></tr>{% endfor %}</table></div>
       <p><button type="submit">Save class register</button> <a href="{{url_for('teacher_portal',lesson_date=chosen_date)}}">Back to teacher portal</a></p>
     </form>{% else %}<p>No students found in this class and stream. Ask the administrator to check the class and stream.</p>{% endif %}"""
     return page("Mark class register", body, lesson=lesson, chosen_date=chosen_date, students=students, saved_map=saved_map)
@@ -782,7 +746,11 @@ def notifications_page():
 def health():
     return {"status":"ok","app":"Scholar Tracker"}
 
+from resilience import register_resilience_routes, init_resilience_db
+
+register_resilience_routes(app, connect_db, admin_required, teacher_required, page)
 init_db()
+init_resilience_db(connect_db)
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "5000")), debug=False)
