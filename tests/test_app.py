@@ -14,7 +14,7 @@ class ScholarTrackerTests(unittest.TestCase):
     def setUp(self):
         self.db_file = os.path.join(_TEST_ROOT.name, f"test-{id(self)}.db")
         scholar.DB = self.db_file
-        scholar.app.config.update(TESTING=True, SECRET_KEY="test-only-secret-key")
+        scholar.app.config.update(TESTING=True, SECRET_KEY="test-only-secret-key", SESSION_COOKIE_SECURE=False)
         scholar.init()
         with scholar.conn() as db:
             db.execute("DELETE FROM attendance")
@@ -55,6 +55,50 @@ class ScholarTrackerTests(unittest.TestCase):
         with self.client.session_transaction() as sess:
             sess["uid"] = user_id
             sess["csrf"] = "test-csrf-token"
+
+    def test_production_setup_requires_setup_token(self):
+        original_env = scholar.APP_ENV
+        original_token = os.environ.pop("SETUP_TOKEN", None)
+        try:
+            with scholar.conn() as db:
+                db.execute("DELETE FROM users WHERE role='admin'")
+            scholar.APP_ENV = "production"
+            response = self.client.get("/setup")
+            self.assertEqual(response.status_code, 503)
+            self.assertIn(b"Configure SETUP_TOKEN", response.data)
+        finally:
+            scholar.APP_ENV = original_env
+            if original_token is not None:
+                os.environ["SETUP_TOKEN"] = original_token
+
+    def test_setup_rejects_wrong_configured_token(self):
+        original_env = scholar.APP_ENV
+        original_token = os.environ.get("SETUP_TOKEN")
+        try:
+            with scholar.conn() as db:
+                db.execute("DELETE FROM users WHERE role='admin'")
+            scholar.APP_ENV = "production"
+            os.environ["SETUP_TOKEN"] = "expected-test-token"
+            with self.client.session_transaction() as sess:
+                sess["csrf"] = "test-csrf-token"
+            response = self.client.post(
+                "/setup",
+                data={
+                    "_csrf": "test-csrf-token",
+                    "setup_token": "wrong-token",
+                    "full_name": "New Admin",
+                    "username": "newadmin",
+                    "password": "a-long-test-password",
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"Invalid setup token", response.data)
+        finally:
+            scholar.APP_ENV = original_env
+            if original_token is None:
+                os.environ.pop("SETUP_TOKEN", None)
+            else:
+                os.environ["SETUP_TOKEN"] = original_token
 
     def test_health_endpoint_is_available(self):
         response = self.client.get("/health")

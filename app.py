@@ -5,7 +5,11 @@ from functools import wraps
 from flask import Flask, request, redirect, url_for, render_template_string, flash, session, abort, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
 
+APP_ENV=os.environ.get("APP_ENV","development").strip().lower()
+if APP_ENV=="production" and not os.environ.get("SECRET_KEY"):
+ raise RuntimeError("SECRET_KEY must be configured when APP_ENV=production.")
 app=Flask(__name__); app.secret_key=os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE=(APP_ENV=="production"))
 DB=os.environ.get("SCHOLAR_DB","scholar_tracker.db")
 ROLES=("admin","teacher","parent")
 
@@ -80,8 +84,11 @@ def page(title,body,**kw): return render_template_string(SHELL,title=title,body=
 def setup():
  with conn() as d: exists=d.execute("SELECT COUNT(*) FROM users WHERE role='admin'").fetchone()[0]
  if exists: return redirect(url_for("login"))
+ required=os.environ.get("SETUP_TOKEN","")
+ if APP_ENV=="production" and not required:
+  return page("Setup unavailable","<h1>Setup unavailable</h1><p>Configure SETUP_TOKEN before creating the first administrator on a production server.</p>"),503
  if request.method=="POST":
-  required=os.environ.get("SETUP_TOKEN",""); given=request.form.get("setup_token","")
+  given=request.form.get("setup_token","")
   if required and not hmac.compare_digest(required,given): flash("Invalid setup token.")
   else:
    name=request.form.get("full_name","").strip(); username=request.form.get("username","").strip(); pw=request.form.get("password","")
