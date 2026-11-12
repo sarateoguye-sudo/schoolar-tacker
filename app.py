@@ -246,7 +246,7 @@ def page(title, body, **context):
     # Inject a server-generated CSRF token into every POST form rendered by this helper.
     body = re.sub(
         r'(<form\b[^>]*method="post"[^>]*>)',
-        r'\1{{ csrf_field() }},
+        r'\1{{ csrf_field() }}',
         body,
         flags=re.IGNORECASE,
     )
