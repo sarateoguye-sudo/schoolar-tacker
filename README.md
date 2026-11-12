@@ -37,22 +37,34 @@ python app.py
 
 Open http://127.0.0.1:5000. On first run, open the setup page and create the first administrator. Choose a unique password of at least 12 characters. Administrators can then create teacher and parent accounts, link parent accounts to students, and assign teachers to classes and subjects.
 
-Optional environment variables:
-- `APP_ENV`: set to `production` on a production host. Production mode requires `SECRET_KEY`, enables secure session cookies, and refuses first-admin setup unless `SETUP_TOKEN` is configured.
+## Deployment preparation
+
+A `Procfile` is included for hosts that support it. It starts the app using Gunicorn, a production WSGI server, rather than Flask's development server.
+
+Configure these environment variables on the hosting provider:
+- `APP_ENV=production`
+- `SECRET_KEY`: a long, randomly generated secret; keep it private.
+- `SETUP_TOKEN`: a separate long, random token needed for first-admin setup in production. Use it only for setup and remove it after the first administrator has been created.
+- `SCHOLAR_DB`: path to a persistent writable data location if using SQLite.
+
+**Do not deploy with an ephemeral filesystem for a real school:** SQLite records can be lost when the host restarts or redeploys unless the database is stored on persistent storage. Before real use, choose a hosting provider and persistent database strategy, enable HTTPS, configure backups, and complete a privacy/security review. The app has not yet been deployed.
+
+## Environment variables
+
+- `APP_ENV`: set to `production` on a production host. Production mode requires `SECRET_KEY` and enables secure session cookies.
 - `SECRET_KEY`: required in production; set a long, random secret and keep it private.
-- `SETUP_TOKEN`: required in production for first-admin setup. Use a long random token, then rotate/remove the setup route after the first admin is created.
+- `SETUP_TOKEN`: required in production for first-admin setup.
 - `SCHOLAR_DB`: optional SQLite database file path.
 - `PORT`: local server port (defaults to 5000).
 
 ## Important limitations — not production ready
 
 - This app has **not been published or deployed**. The health endpoint is informational only.
-- Browser pop-up alerts require the parent to grant browser permission and keep Scholar Tracker open. Reliable background push, SMS, email, and a timetable are not implemented.
+- Browser pop-up alerts require the parent to grant browser permission and keep Scholar Tracker open. Reliable background push, SMS, and email notifications are not included.
 - No password-reset flow, MFA, rate limiting, formal consent workflow, database backup automation, or managed production database is included.
-- Production startup requires `APP_ENV=production` and a strong `SECRET_KEY`. Production first-admin setup is blocked unless a `SETUP_TOKEN` is configured; use a long random token and do not share it. Set `APP_ENV=development` only for local development.
-- The application uses SQLite and a Flask development server for local testing. Do not expose the development server directly to the public internet; use a production WSGI server and HTTPS.
+- The application uses SQLite for its prototype data. Do not expose the Flask development server directly to the public internet.
 - Do not use real student data until a responsible school reviews privacy, access controls, backups, hosting, and applicable Kenyan data-protection requirements.
-- The UI and routes have not yet been comprehensively automated or user-tested. Verify them locally before relying on results.
+- The UI and routes have not yet been comprehensively automated or user-tested. Verify the screens and workflows before relying on results.
 - Sample students are fictional.
 
 ## Main routes
@@ -66,14 +78,14 @@ Optional environment variables:
 - `/attendance` lesson attendance (admin and assigned teachers)
 - `/reports` attendance summaries and CSV export (admin/teacher)
 - `/calendar` admin-managed school calendar visible to parents
-- `/timetable` weekly timetable (admin manages; teachers and parents can view)
+- `/timetable` weekly timetable
 - `/parent` parents' portal
 - `/notifications` in-app notifications and browser alert permission
 - `/health` basic health check
 
 ## Suggested next steps
 
-1. Run the application locally and fix any issues found.
-2. Add automated tests for role boundaries, attendance, reports, and parent-child privacy.
-3. Add reliable background push notifications only after choosing a provider, configuring credentials, HTTPS hosting, and consent.
-4. Review security and privacy before any deployment.
+1. Choose a hosting provider and confirm whether a persistent database/storage option is available and affordable.
+2. Deploy a test instance using fictional data only.
+3. Test role boundaries, attendance, reports, calendar, and parent-child privacy on the hosted instance.
+4. Review security and privacy before any real school deployment.
