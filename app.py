@@ -245,8 +245,8 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 def page(title, body, **context):
     # Inject a server-generated CSRF token into every POST form rendered by this helper.
     body = re.sub(
-        r'(<form\\b[^>]*method="post"[^>]*>)',
-        r'\\1{{ csrf_field() }}',
+        r'(<form\b[^>]*method="post"[^>]*>)',
+        r'\1{{ csrf_field() }},
         body,
         flags=re.IGNORECASE,
     )
