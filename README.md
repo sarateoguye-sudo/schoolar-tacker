@@ -105,3 +105,22 @@ Suggestions, bug reports, and contributions are welcome. Please open a GitHub Is
 ---
 
 **Scholar Tracker — organised records, informed families, and a better-connected school community.**
+
+## Security setup before deployment
+
+The school-management pages now require an administrator session. Before using the app on Render:
+
+1. Open the Render dashboard for the Scholar Tracker web service and open **Environment**.
+2. Add `SECRET_KEY` with a long, randomly generated secret (at least 32 random bytes).
+3. Add `ADMIN_USERNAME` with a unique administrator username.
+4. Add `ADMIN_PASSWORD` with a strong password of at least 16 characters. Do not commit these values to GitHub or share them in chat.
+5. Save the environment settings and wait for the service to redeploy.
+6. Open `/admin/login` on the deployed site and sign in with those values.
+7. Use **Teacher accounts** inside the administrator workspace to create a separate account for each teacher.
+
+The shared demo teacher login is disabled. Existing database rows named `teacher` cannot be used to sign in. Keep sample records only until security testing is complete.
+
+Security protections include administrator-only school-management routes, teacher-role checks, CSRF tokens on POST forms, login rate limiting, safer session cookies, response security headers, request-size limits, and SQLite foreign-key enforcement.
+
+**Important limitations:** this is a single-school prototype, not yet a fully isolated multi-school subscription platform. Before onboarding multiple paying schools or entering real student data, add and test school-level data isolation, secure persistent database hosting and backups, account recovery, audit logging, and a professional security review. The in-memory rate-limit store is a starter default; configure a shared store through `RATELIMIT_STORAGE_URI` for multi-instance deployments.
+

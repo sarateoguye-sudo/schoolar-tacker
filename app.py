@@ -1,17 +1,74 @@
 import os
+import re
+import hmac
+import secrets
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from functools import wraps
-from flask import Flask, request, redirect, url_for, render_template_string, flash, session
+from flask import Flask, request, redirect, url_for, render_template_string, flash, session, abort
+from markupsafe import Markup
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "change-this-before-deployment")
+# A random fallback is safe for local demos but invalidates sessions after restarts.
+# Set SECRET_KEY in Render so sessions remain stable across deploys.
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER") or os.environ.get("FLASK_ENV") == "production"),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+    MAX_CONTENT_LENGTH=1 * 1024 * 1024,
+)
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri=os.environ.get("RATELIMIT_STORAGE_URI", "memory://"),
+)
 DB_PATH = os.environ.get("SCHOLAR_DB", "scholar_tracker.db")
+
+def csrf_token():
+    token = session.get("_csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["_csrf_token"] = token
+    return token
+
+def csrf_field():
+    return Markup('<input type="hidden" name="csrf_token" value="{}">'.format(csrf_token()))
+
+@app.before_request
+def enforce_csrf():
+    if request.method == "POST":
+        supplied = request.form.get("csrf_token", "")
+        expected = session.get("_csrf_token", "")
+        if not supplied or not expected or not hmac.compare_digest(supplied, expected):
+            abort(400, description="Invalid or missing CSRF token. Reload the page and try again.")
+
+@app.after_request
+def add_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+    )
+    if request.is_secure or os.environ.get("RENDER"):
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    if request.path not in ("/health",) and not request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 def connect_db():
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
+    db.execute("PRAGMA foreign_keys = ON")
     return db
 
 def init_db():
@@ -68,10 +125,6 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         """)
-        demo_user = db.execute("SELECT id FROM teacher_users WHERE username=?", ("teacher",)).fetchone()
-        if not demo_user:
-            db.execute("INSERT INTO teacher_users(username,teacher_name,password_hash) VALUES(?,?,?)",
-                       ("teacher", "Demo Teacher", generate_password_hash("Demo123!")))
         # Seed clearly labelled demo lessons only when the timetable is empty.
         # These entries make the demo teacher portal testable without pretending
         # to represent a real school's timetable.
@@ -135,7 +188,16 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 @media(max-width:520px){header{align-items:flex-start;flex-direction:column;gap:6px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.card,.panel{padding:16px}.metric{font-size:1.8rem}main{padding:22px 13px}nav a{padding:8px}}
 </style></head><body>
 <header><div><strong>School management</strong><br><span>Welcome to your Scholar Tracker workspace</span></div><div class="app-install-area"><button class="install-app" id="installAppButton" type="button" hidden>Install app</button><span class="app-install-status" id="appInstallStatus">Add to home screen from your browser menu</span><span>● Demo workspace · Sample data</span></div></header>
-<nav><a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('teacher_login') }}">Teacher portal login</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('parent_calendar') }}">Parent calendar view</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a></nav>
+<nav>
+{% if session.get('role') == 'admin' %}
+<a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('admin_teachers') }}">Teacher accounts</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a><form method="post" action="{{ url_for('admin_logout') }}"><button type="submit">Admin logout</button></form>
+{% elif session.get('role') == 'teacher' %}
+<a href="{{ url_for('teacher_portal') }}">My lessons</a><form method="post" action="{{ url_for('teacher_logout') }}"><button type="submit">Teacher logout</button></form>
+{% else %}
+<a href="{{ url_for('admin_login') }}">Administrator login</a><a href="{{ url_for('teacher_login') }}">Teacher login</a>
+{% endif %}
+<a href="{{ url_for('parent_calendar') }}">Parent calendar view</a>
+</nav>
 <main>
 {% for message in get_flashed_messages() %}<div class="flash">{{ message }}</div>{% endfor %}
 {{ body|safe }}
@@ -181,34 +243,152 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 """
 
 def page(title, body, **context):
-    return render_template_string(PAGE, title=title, body=render_template_string(body, **context))
+    # Inject a server-generated CSRF token into every POST form rendered by this helper.
+    body = re.sub(
+        r'(<form\b[^>]*method="post"[^>]*>)',
+        r'\1{{ csrf_field() }}',
+        body,
+        flags=re.IGNORECASE,
+    )
+    return render_template_string(
+        PAGE,
+        title=title,
+        body=render_template_string(body, csrf_field=csrf_field, **context),
+        csrf_field=csrf_field,
+    )
 
+
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if session.get("role") != "admin":
+            return redirect(url_for("admin_login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
 
 def teacher_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if "teacher_user_id" not in session:
+        if session.get("role") != "teacher" or "teacher_user_id" not in session:
             flash("Please log in to access the teacher portal.")
             return redirect(url_for("teacher_login", next=request.path))
         return view(*args, **kwargs)
     return wrapped
 
+@app.route("/admin/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute")
+def admin_login():
+    configured_username = os.environ.get("ADMIN_USERNAME", "").strip()
+    configured_password = os.environ.get("ADMIN_PASSWORD", "")
+    configured = bool(configured_username and len(configured_password) >= 16)
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        if (
+            configured
+            and hmac.compare_digest(username, configured_username)
+            and hmac.compare_digest(password, configured_password)
+        ):
+            session.clear()
+            session["role"] = "admin"
+            session["admin_username"] = configured_username
+            session.permanent = True
+            return redirect(url_for("dashboard"))
+        flash("Login failed. Check your credentials or configure the administrator secrets in Render.")
+    body = """
+    <h1>Administrator login</h1>
+    <p class="muted">Sign in to manage school records and settings.</p>
+    {% if not configured %}<div class="notice"><strong>Administrator login is disabled.</strong><br>In Render, set ADMIN_USERNAME and a strong ADMIN_PASSWORD containing at least 16 characters. Also set SECRET_KEY to a long random secret.</div>{% endif %}
+    <section class="panel" style="max-width:520px"><form method="post">
+      <div class="field"><label>Administrator username</label><input name="username" autocomplete="username" required></div>
+      <div class="field"><label>Password</label><input type="password" name="password" autocomplete="current-password" required></div>
+      <button type="submit">Log in securely</button>
+    </form></section>
+    """
+    return page("Administrator login", body, configured=configured)
+
+@app.route("/admin/logout", methods=["POST"])
+@admin_required
+def admin_logout():
+    session.clear()
+    flash("You have been logged out.")
+    return redirect(url_for("admin_login"))
+
+@app.route("/admin/teachers", methods=["GET", "POST"])
+@admin_required
+def admin_teachers():
+    with connect_db() as db:
+        if request.method == "POST":
+            action = request.form.get("action", "create")
+            if action in ("activate", "deactivate"):
+                try:
+                    teacher_id = int(request.form.get("teacher_id", ""))
+                    db.execute(
+                        "UPDATE teacher_users SET active=? WHERE id=?",
+                        (1 if action == "activate" else 0, teacher_id),
+                    )
+                    db.commit()
+                    flash("Teacher account status updated.")
+                except (ValueError, sqlite3.Error):
+                    flash("Could not update that teacher account.")
+                return redirect(url_for("admin_teachers"))
+            username = request.form.get("username", "").strip()
+            teacher_name = request.form.get("teacher_name", "").strip()
+            password = request.form.get("password", "")
+            if len(username) < 3 or not teacher_name or len(password) < 12:
+                flash("Use a username of at least 3 characters, a teacher name, and a password of at least 12 characters.")
+            elif username.casefold() == "teacher":
+                flash("The reserved demo username is not allowed. Choose a named account.")
+            else:
+                try:
+                    db.execute(
+                        "INSERT INTO teacher_users(username, teacher_name, password_hash) VALUES(?,?,?)",
+                        (username, teacher_name, generate_password_hash(password)),
+                    )
+                    db.commit()
+                    flash("Teacher account created. Share the credentials privately with that teacher.")
+                    return redirect(url_for("admin_teachers"))
+                except sqlite3.IntegrityError:
+                    flash("That username already exists.")
+        teachers = db.execute(
+            "SELECT id, username, teacher_name, active FROM teacher_users WHERE username != 'teacher' ORDER BY teacher_name"
+        ).fetchall()
+    body = """
+    <h1>Teacher accounts</h1>
+    <p class="muted">Create named accounts for staff. Never share accounts between teachers.</p>
+    <section class="panel"><h2>Create teacher account</h2>
+      <form method="post">
+        <div class="field"><label>Username</label><input name="username" minlength="3" autocomplete="off" required></div>
+        <div class="field"><label>Teacher's name</label><input name="teacher_name" required></div>
+        <div class="field"><label>Temporary password (12+ characters)</label><input type="password" name="password" minlength="12" autocomplete="new-password" required></div>
+        <button type="submit">Create account</button>
+      </form>
+    </section>
+    <div class="table-wrap"><table><tr><th>Username</th><th>Teacher</th><th>Status</th><th>Action</th></tr>
+    {% for t in teachers %}<tr><td>{{t.username}}</td><td>{{t.teacher_name}}</td><td>{{'Active' if t.active else 'Disabled'}}</td><td>
+      <form method="post" style="margin:0"><input type="hidden" name="teacher_id" value="{{t.id}}"><input type="hidden" name="action" value="{{'deactivate' if t.active else 'activate'}}"><button type="submit">{{'Disable' if t.active else 'Activate'}}</button></form>
+    </td></tr>{% endfor %}</table></div>
+    """
+    return page("Teacher accounts", body, teachers=teachers)
+
 @app.route("/teacher/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute")
 def teacher_login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         with connect_db() as db:
             user = db.execute("SELECT * FROM teacher_users WHERE username=? AND active=1", (username,)).fetchone()
-        if user and check_password_hash(user["password_hash"], password):
+        if username.casefold() != "teacher" and user and check_password_hash(user["password_hash"], password):
             session.clear()
+            session["role"] = "teacher"
             session["teacher_user_id"] = user["id"]
             session["teacher_name"] = user["teacher_name"]
+            session.permanent = True
             return redirect(url_for("teacher_portal"))
-        flash("Login failed. Check your username and password.")
+        flash("Login failed. The shared demo account is disabled; ask the school administrator for your own account.")
     body = """
-    <h1>Teacher portal login</h1><p class="muted">Sign in to view assigned lessons and mark a class register.</p>
-    <div class="notice"><strong>Demo account for testing only</strong><br>Username: <code>teacher</code> · Password: <code>Demo123!</code><br>Change or disable this account before real use.</div>
+    <h1>Teacher portal login</h1><p class="muted">Sign in to view your assigned lessons and mark a class register.</p>
     <section class="panel" style="max-width:520px"><form method="post">
       <div class="field"><label>Username</label><input name="username" autocomplete="username" required></div>
       <div class="field"><label>Password</label><input type="password" name="password" autocomplete="current-password" required></div>
@@ -291,6 +471,7 @@ def teacher_register(lesson_id):
     return page("Mark class register", body, lesson=lesson, chosen_date=chosen_date, students=students, saved_map=saved_map)
 
 @app.route("/")
+@admin_required
 def dashboard():
     with connect_db() as db:
         students = db.execute("SELECT COUNT(*) FROM students").fetchone()[0]
@@ -320,6 +501,7 @@ def dashboard():
     return page("Dashboard", body, students=students, stats=stats, recent=recent, events=events)
 
 @app.route("/students", methods=["GET","POST"])
+@admin_required
 def students_page():
     with connect_db() as db:
         if request.method == "POST":
@@ -353,6 +535,7 @@ def students_page():
     return page("Students", body, students=students)
 
 @app.route("/attendance", methods=["GET","POST"])
+@admin_required
 def attendance_page():
     chosen_date = request.values.get("lesson_date", date.today().isoformat())
     chosen_class = request.values.get("class_name", "")
@@ -398,6 +581,7 @@ def attendance_page():
                 chosen_date=chosen_date, chosen_class=chosen_class, subject=subject)
 
 @app.route("/timetable", methods=["GET", "POST"])
+@admin_required
 def timetable_page():
     weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
     selected_day = request.values.get("weekday", date.today().strftime("%A"))
@@ -505,6 +689,7 @@ def timetable_page():
                 teachers=teachers, classes=classes, lessons=lessons)
 
 @app.route("/reports")
+@admin_required
 def reports():
     start = request.args.get("start", date.today().replace(day=1).isoformat())
     end = request.args.get("end", date.today().isoformat())
@@ -526,6 +711,7 @@ def reports():
     return page("Reports", body, rows=rows, start=start, end=end)
 
 @app.route("/calendar", methods=["GET","POST"])
+@admin_required
 def calendar_page():
     with connect_db() as db:
         if request.method == "POST":
@@ -564,6 +750,7 @@ def parent_calendar():
     return page("School calendar for parents", body, events=events)
 
 @app.route("/notifications")
+@admin_required
 def notifications_page():
     with connect_db() as db:
         rows = db.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT 100").fetchall()
