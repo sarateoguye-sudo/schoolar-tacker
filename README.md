@@ -49,6 +49,20 @@ Configure these environment variables on the hosting provider:
 
 **Do not deploy with an ephemeral filesystem for a real school:** SQLite records can be lost when the host restarts or redeploys unless the database is stored on persistent storage. Before real use, choose a hosting provider and persistent database strategy, enable HTTPS, configure backups, and complete a privacy/security review. The app has not yet been deployed.
 
+## Free demo deployment (fictional data only)
+
+A Render Blueprint configuration is provided in `render.yaml` for a temporary demo. To use it:
+
+1. Sign in to Render and connect the GitHub repository `sarateoguye-sudo/schoolar-tacker`.
+2. Choose **New + → Blueprint** and select this repository.
+3. Select branch `fix/production-security` and let Render read `render.yaml`.
+4. Review the service plan and confirm it is **Free** before creating it. Do not approve any paid plan or add payment details for this demo.
+5. When deployment finishes, open the generated `.onrender.com` address and visit `/setup`.
+6. In the Render service's Environment settings, copy the generated `SETUP_TOKEN` value and enter it on the setup page. Create a demo administrator with a unique password of at least 12 characters.
+7. Test only with fictional names and records. Do not share the setup token or administrator password.
+
+**Demo-only storage warning:** this blueprint stores the SQLite database under `/tmp`, which is temporary and may be cleared. A free service may sleep when idle. Do not use this setup for a real school, real student data, or important attendance records. This repository has not been deployed by this configuration yet; creating the hosted service requires you to sign in to Render and approve the free service.
+
 ## Environment variables
 
 - `APP_ENV`: set to `production` on a production host. Production mode requires `SECRET_KEY` and enables secure session cookies.
