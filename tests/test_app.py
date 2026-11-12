@@ -14,7 +14,7 @@ class ScholarTrackerTests(unittest.TestCase):
     def setUp(self):
         self.db_file = os.path.join(_TEST_ROOT.name, f"test-{id(self)}.db")
         scholar.DB = self.db_file
-        scholar.app.config.update(TESTING=True, SECRET_KEY="test-only-secret-key")
+        scholar.app.config.update(TESTING=True, SECRET_KEY="test-only-secret-key", SESSION_COOKIE_SECURE=False)
         scholar.init()
         with scholar.conn() as db:
             db.execute("DELETE FROM attendance")
