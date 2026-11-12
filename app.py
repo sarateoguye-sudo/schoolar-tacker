@@ -157,11 +157,8 @@ def init_db():
 PAGE = """
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
 <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
 <meta name="theme-color" content="#4263eb">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Scholar Tracker">
 <title>{{ title }} · Scholar Tracker</title>
 <style>
 :root{--ink:#17243b;--muted:#7b879c;--blue:#4263eb;--blue-soft:#edf1ff;--bg:#f5f7fb;--line:#e8ecf4;--white:#fff;--green:#13a879;--shadow:0 8px 30px rgba(27,45,84,.055)}
@@ -187,7 +184,7 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 @media(max-width:850px){header{margin-left:0;height:auto;min-height:72px;padding:18px 20px}nav{position:relative;width:auto;top:auto;bottom:auto;padding:10px 14px;flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}nav:before{width:100%;padding:4px 8px 8px}nav:after{display:none}nav a{font-size:.82rem;padding:9px 10px}main{margin:0;padding:26px 18px;min-height:auto}footer{margin-left:0;padding:18px} }
 @media(max-width:520px){header{align-items:flex-start;flex-direction:column;gap:6px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.card,.panel{padding:16px}.metric{font-size:1.8rem}main{padding:22px 13px}nav a{padding:8px}}
 </style></head><body>
-<header><div><strong>School management</strong><br><span>Welcome to your Scholar Tracker workspace</span></div><div class="app-install-area"><button class="install-app" id="installAppButton" type="button" hidden>Install app</button><span class="app-install-status" id="appInstallStatus">Add to home screen from your browser menu</span><span>● Demo workspace · Sample data</span></div></header>
+<header><div><strong>School management</strong><br><span>Welcome to your Scholar Tracker workspace</span></div><div><span>● Demo workspace · Sample data</span></div></header>
 <nav>
 {% if session.get('role') == 'admin' %}
 <a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('admin_teachers') }}">Teacher accounts</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a><form method="post" action="{{ url_for('admin_logout') }}"><button type="submit">Admin logout</button></form>
@@ -201,45 +198,7 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 <main>
 {% for message in get_flashed_messages() %}<div class="flash">{{ message }}</div>{% endfor %}
 {{ body|safe }}
-</main><footer>Scholar Tracker · Built as a learning prototype for school attendance management.</footer>
-<script>
-(function () {
-  const button = document.getElementById("installAppButton");
-  const status = document.getElementById("appInstallStatus");
-  let installPrompt = null;
-
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", function () {
-      navigator.serviceWorker.register("/static/sw.js").catch(function () {
-        if (status) status.textContent = "Install from your browser menu when available";
-      });
-    });
-  }
-
-  window.addEventListener("beforeinstallprompt", function (event) {
-    event.preventDefault();
-    installPrompt = event;
-    if (button) button.hidden = false;
-    if (status) status.textContent = "Install Scholar Tracker on this device";
-  });
-
-  if (button) button.addEventListener("click", async function () {
-    if (!installPrompt) {
-      if (status) status.textContent = "On your browser menu, choose Install app or Add to Home screen";
-      return;
-    }
-    installPrompt.prompt();
-    await installPrompt.userChoice;
-    installPrompt = null;
-    button.hidden = true;
-  });
-
-  window.addEventListener("appinstalled", function () {
-    if (button) button.hidden = true;
-    if (status) status.textContent = "Scholar Tracker is installed";
-  });
-})();
-</script></body></html>
+</main><footer>Scholar Tracker · Built as a learning prototype for school attendance management.</footer></body></html>
 """
 
 def page(title, body, **context):
