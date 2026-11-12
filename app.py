@@ -126,7 +126,7 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 @media(max-width:520px){header{align-items:flex-start;flex-direction:column;gap:6px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.card,.panel{padding:16px}.metric{font-size:1.8rem}main{padding:22px 13px}nav a{padding:8px}}
 </style></head><body>
 <header><div><strong>School management</strong><br><span>Welcome to your Scholar Tracker workspace</span></div><span>● Demo workspace · Sample data</span></header>
-<nav><a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('teacher_login') }}">Teacher portal login</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a></nav>
+<nav><a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('teacher_login') }}">Teacher portal login</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for(&quot;parent_calendar&quot;) }}">Parent calendar view</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a></nav>
 <main>
 {% for message in get_flashed_messages() %}<div class="flash">{{ message }}</div>{% endfor %}
 {{ body|safe }}
@@ -499,6 +499,22 @@ def calendar_page():
     <div class="table-wrap"><table><tr><th>Date</th><th>Event</th><th>Details</th></tr>{% for e in events %}<tr><td>{{e.event_date}}</td><td>{{e.title}}</td><td>{{e.details}}</td></tr>{% endfor %}</table></div>
     """
     return page("School calendar", body, events=events)
+
+@app.route("/parents/calendar")
+def parent_calendar():
+    """Read-only calendar page for families; no student records are shown."""
+    with connect_db() as db:
+        events = db.execute("SELECT event_date, title, details FROM events ORDER BY event_date ASC").fetchall()
+    body = """
+    <h1>School calendar for parents</h1>
+    <p class="muted">View upcoming school events, examinations, meetings and holidays.</p>
+    <div class="notice">This is a read-only calendar view. It does not display student attendance or private student information.</div>
+    {% if events %}<div class="table-wrap"><table><tr><th>Date</th><th>Event</th><th>Details</th></tr>
+    {% for e in events %}<tr><td>{{e.event_date}}</td><td>{{e.title}}</td><td>{{e.details or "—"}}</td></tr>{% endfor %}
+    </table></div>{% else %}<section class="panel"><p>No school events have been published yet. Please check again later.</p></section>{% endif %}
+    <p class="muted">Prototype notice: events are only as current as the information entered by the school.</p>
+    """
+    return page("School calendar for parents", body, events=events)
 
 @app.route("/notifications")
 def notifications_page():
