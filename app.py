@@ -1,7 +1,9 @@
 import os
 import sqlite3
 from datetime import date
-from flask import Flask, request, redirect, url_for, render_template_string, flash
+from functools import wraps
+from flask import Flask, request, redirect, url_for, render_template_string, flash, session
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-before-deployment")
@@ -45,6 +47,13 @@ def init_db():
             message TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'Demo only'
         );
+        CREATE TABLE IF NOT EXISTS teacher_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            teacher_name TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1
+        );
         CREATE TABLE IF NOT EXISTS teacher_timetable (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             weekday TEXT NOT NULL,
@@ -59,6 +68,10 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         """)
+        demo_user = db.execute("SELECT id FROM teacher_users WHERE username=?", ("teacher",)).fetchone()
+        if not demo_user:
+            db.execute("INSERT INTO teacher_users(username,teacher_name,password_hash) VALUES(?,?,?)",
+                       ("teacher", "Demo Teacher", generate_password_hash("Demo123!")))
         count = db.execute("SELECT COUNT(*) FROM students").fetchone()[0]
         if count == 0:
             db.executemany(
@@ -96,7 +109,7 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 @media(max-width:520px){header{align-items:flex-start;flex-direction:column;gap:6px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.card,.panel{padding:16px}.metric{font-size:1.8rem}main{padding:22px 13px}nav a{padding:8px}}
 </style></head><body>
 <header><div><strong>School management</strong><br><span>Welcome to your Scholar Tracker workspace</span></div><span>● Demo workspace · Sample data</span></header>
-<nav><a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a></nav>
+<nav><a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('teacher_login') }}">Teacher portal login</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a></nav>
 <main>
 {% for message in get_flashed_messages() %}<div class="flash">{{ message }}</div>{% endfor %}
 {{ body|safe }}
@@ -105,6 +118,113 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 
 def page(title, body, **context):
     return render_template_string(PAGE, title=title, body=render_template_string(body, **context))
+
+
+def teacher_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if "teacher_user_id" not in session:
+            flash("Please log in to access the teacher portal.")
+            return redirect(url_for("teacher_login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
+
+@app.route("/teacher/login", methods=["GET", "POST"])
+def teacher_login():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        with connect_db() as db:
+            user = db.execute("SELECT * FROM teacher_users WHERE username=? AND active=1", (username,)).fetchone()
+        if user and check_password_hash(user["password_hash"], password):
+            session.clear()
+            session["teacher_user_id"] = user["id"]
+            session["teacher_name"] = user["teacher_name"]
+            return redirect(url_for("teacher_portal"))
+        flash("Login failed. Check your username and password.")
+    body = """
+    <h1>Teacher portal login</h1><p class="muted">Sign in to view assigned lessons and mark a class register.</p>
+    <div class="notice"><strong>Demo account for testing only</strong><br>Username: <code>teacher</code> · Password: <code>Demo123!</code><br>Change or disable this account before real use.</div>
+    <section class="panel" style="max-width:520px"><form method="post">
+      <div class="field"><label>Username</label><input name="username" autocomplete="username" required></div>
+      <div class="field"><label>Password</label><input type="password" name="password" autocomplete="current-password" required></div>
+      <button type="submit">Log in</button></form></section>"""
+    return page("Teacher portal login", body)
+
+@app.route("/teacher/logout", methods=["POST"])
+def teacher_logout():
+    session.clear()
+    flash("You have been logged out.")
+    return redirect(url_for("teacher_login"))
+
+@app.route("/teacher/portal")
+@teacher_required
+def teacher_portal():
+    teacher_name = session["teacher_name"]
+    chosen_date = request.args.get("lesson_date", date.today().isoformat())
+    try:
+        weekday = date.fromisoformat(chosen_date).strftime("%A")
+    except ValueError:
+        chosen_date = date.today().isoformat()
+        weekday = date.today().strftime("%A")
+    with connect_db() as db:
+        lessons = db.execute("SELECT * FROM teacher_timetable WHERE teacher_name=? AND weekday=? ORDER BY start_time,period",
+                             (teacher_name, weekday)).fetchall()
+    body = """
+    <div style="display:flex;justify-content:space-between;gap:14px;align-items:start;flex-wrap:wrap">
+      <div><h1>Teacher portal</h1><p class="muted">Welcome, {{teacher_name}}. Your assigned lessons and class registers are below.</p></div>
+      <form method="post" action="{{url_for('teacher_logout')}}" style="margin:0"><button type="submit">Log out</button></form>
+    </div>
+    <section class="panel"><form method="get"><div class="field"><label>Teaching date</label><input type="date" name="lesson_date" value="{{chosen_date}}" required></div><button>View day</button></form></section>
+    {% if lessons %}<div class="table-wrap"><table><tr><th>Time</th><th>Subject</th><th>Class / stream</th><th>Room</th><th>Register</th></tr>
+    {% for lesson in lessons %}<tr><td>{{lesson.start_time}}–{{lesson.end_time}}</td><td>{{lesson.subject}}</td><td>{{lesson.class_name}} / {{lesson.stream}}</td><td>{{lesson.room or '—'}}</td><td><a class="btn" href="{{url_for('teacher_register',lesson_id=lesson.id,lesson_date=chosen_date)}}">Mark register</a></td></tr>{% endfor %}</table></div>
+    {% else %}<section class="panel"><p>No lessons assigned to your account for {{weekday}}. Ask the school administrator to add your teacher name to the timetable as <strong>{{teacher_name}}</strong>.</p><a href="{{url_for('timetable_page')}}" class="btn">Open timetable</a></section>{% endif %}
+    <p class="muted">Prototype only: do not enter real student data until school access controls and persistent storage are configured.</p>"""
+    return page("Teacher portal", body, teacher_name=teacher_name, chosen_date=chosen_date, weekday=weekday, lessons=lessons)
+
+@app.route("/teacher/register/<int:lesson_id>", methods=["GET", "POST"])
+@teacher_required
+def teacher_register(lesson_id):
+    chosen_date = request.values.get("lesson_date", date.today().isoformat())
+    teacher_name = session["teacher_name"]
+    try:
+        date.fromisoformat(chosen_date)
+    except ValueError:
+        chosen_date = date.today().isoformat()
+    with connect_db() as db:
+        lesson = db.execute("SELECT * FROM teacher_timetable WHERE id=? AND teacher_name=?", (lesson_id, teacher_name)).fetchone()
+        if not lesson:
+            flash("That lesson is not assigned to your teacher account.")
+            return redirect(url_for("teacher_portal", lesson_date=chosen_date))
+        if request.method == "POST":
+            students = db.execute("SELECT id FROM students WHERE class_name=? AND stream=? ORDER BY full_name",
+                                  (lesson["class_name"], lesson["stream"])).fetchall()
+            for student in students:
+                status = request.form.get("status_" + str(student["id"]), "Absent")
+                if status not in ("Present", "Absent", "Late"):
+                    status = "Absent"
+                db.execute("""INSERT INTO attendance(student_id,lesson_date,subject,status,marked_by)
+                              VALUES(?,?,?,?,?) ON CONFLICT(student_id,lesson_date,subject)
+                              DO UPDATE SET status=excluded.status,marked_by=excluded.marked_by""",
+                           (student["id"], chosen_date, lesson["subject"], status, teacher_name))
+            db.commit()
+            flash("Class register saved for " + lesson["subject"] + ".")
+            return redirect(url_for("teacher_register", lesson_id=lesson_id, lesson_date=chosen_date))
+        students = db.execute("SELECT * FROM students WHERE class_name=? AND stream=? ORDER BY full_name",
+                              (lesson["class_name"], lesson["stream"])).fetchall()
+        saved = db.execute("""SELECT a.student_id,a.status FROM attendance a JOIN students s ON s.id=a.student_id
+                              WHERE a.lesson_date=? AND a.subject=? AND s.class_name=? AND s.stream=?""",
+                           (chosen_date, lesson["subject"], lesson["class_name"], lesson["stream"])).fetchall()
+        saved_map = {r["student_id"]: r["status"] for r in saved}
+    body = """
+    <h1>Mark class register</h1><p class="muted">{{lesson.subject}} · {{lesson.class_name}} / {{lesson.stream}} · {{lesson.start_time}}–{{lesson.end_time}}</p>
+    <section class="panel"><form method="get"><div class="field"><label>Lesson date</label><input type="date" name="lesson_date" value="{{chosen_date}}" required></div><button>Load date</button></form></section>
+    {% if students %}<form method="post"><input type="hidden" name="lesson_date" value="{{chosen_date}}">
+      <div class="table-wrap"><table><tr><th>Admission no.</th><th>Student</th><th>Attendance</th></tr>
+      {% for s in students %}<tr><td>{{s.admission_no}}</td><td>{{s.full_name}}</td><td><select name="status_{{s.id}}">{% for status in ['Present','Absent','Late'] %}<option {% if saved_map.get(s.id,'Present')==status %}selected{% endif %}>{{status}}</option>{% endfor %}</select></td></tr>{% endfor %}</table></div>
+      <p><button type="submit">Save class register</button> <a href="{{url_for('teacher_portal',lesson_date=chosen_date)}}">Back to teacher portal</a></p>
+    </form>{% else %}<p>No students found in this class and stream. Ask the administrator to check the class and stream.</p>{% endif %}"""
+    return page("Mark class register", body, lesson=lesson, chosen_date=chosen_date, students=students, saved_map=saved_map)
 
 @app.route("/")
 def dashboard():
