@@ -406,10 +406,14 @@ def teacher_register(lesson_id):
                 status = request.form.get("status_" + str(student["id"]), "Absent")
                 if status not in ("Present", "Absent", "Late"):
                     status = "Absent"
-                db.execute("""INSERT INTO attendance(student_id,lesson_date,subject,status,marked_by)
-                              VALUES(?,?,?,?,?) ON CONFLICT(student_id,lesson_date,subject)
-                              DO UPDATE SET status=excluded.status,marked_by=excluded.marked_by""",
-                           (student["id"], chosen_date, lesson["subject"], status, teacher_name))
+                reason_code = request.form.get("reason_" + str(student["id"]), "Unknown")
+                allowed_reasons = {"Illness", "Family responsibility", "Transport problem", "Fees-related issue", "School anxiety or bullying concern", "Unknown / needs follow-up"}
+                if status != "Absent" or reason_code not in allowed_reasons:
+                    reason_code = "Unknown / needs follow-up"
+                db.execute("""INSERT INTO attendance(student_id,lesson_date,subject,status,marked_by,reason_code)
+                              VALUES(?,?,?,?,?,?) ON CONFLICT(student_id,lesson_date,subject)
+                              DO UPDATE SET status=excluded.status,marked_by=excluded.marked_by,reason_code=excluded.reason_code""",
+                           (student["id"], chosen_date, lesson["subject"], status, teacher_name, reason_code))
                 # Record an in-app demo alert when a teacher marks a learner absent.
                 # This is a notification log only; it does not send SMS/email/push messages.
                 if status == "Absent":
@@ -440,8 +444,9 @@ def teacher_register(lesson_id):
     <h1>Mark class register</h1><p class="muted">{{lesson.subject}} · {{lesson.class_name}} / {{lesson.stream}} · {{lesson.start_time}}–{{lesson.end_time}}</p>
     <section class="panel"><form method="get"><div class="field"><label>Lesson date</label><input type="date" name="lesson_date" value="{{chosen_date}}" required></div><button>Load date</button></form></section>
     {% if students %}<form method="post"><input type="hidden" name="lesson_date" value="{{chosen_date}}">
-      <div class="table-wrap"><table><tr><th>Admission no.</th><th>Student</th><th>Attendance</th></tr>
-      {% for s in students %}<tr><td>{{s.admission_no}}</td><td>{{s.full_name}}</td><td><select name="status_{{s.id}}">{% for status in ['Present','Absent','Late'] %}<option {% if saved_map.get(s.id,'Present')==status %}selected{% endif %}>{{status}}</option>{% endfor %}</select></td></tr>{% endfor %}</table></div>
+      <p><button type="button" onclick="document.querySelectorAll('[name^=status_]').forEach(function(x){x.value='Present'})">Mark all present</button> <span class="muted">Review any absent or late learners before saving.</span></p>
+      <div class="table-wrap"><table><tr><th>Admission no.</th><th>Student</th><th>Attendance</th><th>Confidential reason category (absent only)</th></tr>
+      {% for s in students %}<tr><td>{{s.admission_no}}</td><td>{{s.full_name}}</td><td><select name="status_{{s.id}}">{% for status in ['Present','Absent','Late'] %}<option {% if saved_map.get(s.id,'Present')==status %}selected{% endif %}>{{status}}</option>{% endfor %}</select></td><td><select name="reason_{{s.id}}"><option>Unknown / needs follow-up</option><option>Illness</option><option>Family responsibility</option><option>Transport problem</option><option>Fees-related issue</option><option>School anxiety or bullying concern</option></select></td></tr>{% endfor %}</table></div>
       <p><button type="submit">Save class register</button> <a href="{{url_for('teacher_portal',lesson_date=chosen_date)}}">Back to teacher portal</a></p>
     </form>{% else %}<p>No students found in this class and stream. Ask the administrator to check the class and stream.</p>{% endif %}"""
     return page("Mark class register", body, lesson=lesson, chosen_date=chosen_date, students=students, saved_map=saved_map)
