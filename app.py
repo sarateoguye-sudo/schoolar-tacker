@@ -220,7 +220,11 @@ def attendance():
     if status=="Absent" and s["parent_user_id"]:
      msg=f"Attendance alert: {s['full_name']} was marked absent for {sub} on {day}."
      if not d.execute("SELECT 1 FROM notifications WHERE recipient_user_id=? AND student_id=? AND message=?",(s["parent_user_id"],s["id"],msg)).fetchone():
-      d.execute("INSERT INTO notifications(recipient_user_id,student_id,message) VALUES(?,?,?)",(s["parent_user_id"],s["id"],msg))
+      ncols={x["name"] for x in d.execute("PRAGMA table_info(notifications)")}
+      if "recipient" in ncols:
+       d.execute("INSERT INTO notifications(recipient,recipient_user_id,student_id,message) VALUES(?,?,?,?)",(s["parent_contact"] or "",s["parent_user_id"],s["id"],msg))
+      else:
+       d.execute("INSERT INTO notifications(recipient_user_id,student_id,message) VALUES(?,?,?)",(s["parent_user_id"],s["id"],msg))
    d.commit(); log("attendance_saved",cls+"/"+sub+"/"+day); flash("Attendance saved. Linked parents receive an in-app alert; no SMS or email is sent."); return redirect(url_for("attendance",lesson_date=day,class_name=cls,subject=sub))
   students=d.execute("SELECT * FROM students WHERE class_name=? AND active=1 ORDER BY stream,full_name",(cls,)).fetchall()
   saved={r["student_id"]:r["status"] for r in d.execute("SELECT student_id,status FROM attendance WHERE lesson_date=? AND subject=?",(day,sub))}
