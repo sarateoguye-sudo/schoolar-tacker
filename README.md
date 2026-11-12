@@ -11,7 +11,8 @@ Scholar Tracker is a Python/Flask + SQLite school attendance management prototyp
 - Lesson attendance by date, class and subject (Present, Absent, Late)
 - Teacher dashboard and restrictions to assigned classes/subjects
 - Parent portal limited to linked children; in-app absence alerts, unread badge, mark-as-read, and optional browser pop-up notifications while the app is open
-- School calendar for events and meetings
+- Admin-managed school calendar visible to parents; parents receive in-app calendar alerts
+- Admin-managed weekly timetable with teacher/class/subject/time/room, teacher current-lesson panel and in-app lesson reminders
 - Date-range attendance summaries and CSV export
 - Basic audit log and health endpoint
 - Existing prototype SQLite records are retained when the database schema is extended
@@ -63,7 +64,8 @@ Optional environment variables:
 - `/assignments` teacher assignments (admin)
 - `/attendance` lesson attendance (admin and assigned teachers)
 - `/reports` attendance summaries and CSV export (admin/teacher)
-- `/calendar` school calendar
+- `/calendar` admin-managed school calendar visible to parents
+- `/timetable` weekly timetable (admin manages; teachers and parents can view)
 - `/parent` parents' portal
 - `/notifications` in-app notifications and browser alert permission
 - `/health` basic health check
@@ -72,5 +74,5 @@ Optional environment variables:
 
 1. Run the application locally and fix any issues found.
 2. Add automated tests for role boundaries, attendance, reports, and parent-child privacy.
-3. Add timetable management and real notification providers only after credentials and consent processes are designed.
+3. Add reliable background push notifications only after choosing a provider, configuring credentials, HTTPS hosting, and consent.
 4. Review security and privacy before any deployment.
