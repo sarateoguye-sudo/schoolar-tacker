@@ -451,8 +451,25 @@ def teacher_register(lesson_id):
                               VALUES(?,?,?,?,?) ON CONFLICT(student_id,lesson_date,subject)
                               DO UPDATE SET status=excluded.status,marked_by=excluded.marked_by""",
                            (student["id"], chosen_date, lesson["subject"], status, teacher_name))
+                # Record an in-app demo alert when a teacher marks a learner absent.
+                # This is a notification log only; it does not send SMS/email/push messages.
+                if status == "Absent":
+                    parent = db.execute(
+                        "SELECT full_name, parent_contact FROM students WHERE id=?",
+                        (student["id"],),
+                    ).fetchone()
+                    if parent and parent["parent_contact"]:
+                        db.execute(
+                            "INSERT INTO notifications(recipient, message, status) VALUES(?,?,?)",
+                            (
+                                parent["parent_contact"],
+                                f"Demo alert: {parent['full_name']} was marked absent for "
+                                f"{lesson['subject']} on {chosen_date} by {teacher_name}.",
+                                "Demo only — not sent",
+                            ),
+                        )
             db.commit()
-            flash("Class register saved for " + lesson["subject"] + ".")
+            flash("Class register saved. Any absence alerts were added to the demo notification log only.")
             return redirect(url_for("teacher_register", lesson_id=lesson_id, lesson_date=chosen_date))
         students = db.execute("SELECT * FROM students WHERE class_name=? AND stream=? ORDER BY full_name",
                               (lesson["class_name"], lesson["stream"])).fetchall()
