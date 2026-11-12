@@ -250,7 +250,12 @@ def page(title, body, **context):
         body,
         flags=re.IGNORECASE,
     )
-    return render_template_string(PAGE, title=title, body=render_template_string(body, **context))
+    return render_template_string(
+        PAGE,
+        title=title,
+        body=render_template_string(body, csrf_field=csrf_field, **context),
+        csrf_field=csrf_field,
+    )
 
 
 def admin_required(view):
