@@ -60,14 +60,17 @@ def guard():
 @app.context_processor
 def globals_():
  if not session.get("csrf"): session["csrf"]=secrets.token_urlsafe(32)
- return {"csrf":session["csrf"],"viewer":who()}
+ u=who(); unread_count=0
+ if u and u["role"]=="parent":
+  with conn() as d: unread_count=d.execute("SELECT COUNT(*) FROM notifications WHERE recipient_user_id=? AND read_at IS NULL",(u["id"],)).fetchone()[0]
+ return {"csrf":session["csrf"],"viewer":u,"unread_count":unread_count}
 @app.after_request
 def headers(r):
  r.headers["X-Content-Type-Options"]="nosniff"; r.headers["X-Frame-Options"]="DENY"; r.headers["Referrer-Policy"]="strict-origin-when-cross-origin"; r.headers["Cache-Control"]="no-store"; r.headers["Content-Security-Policy"]="default-src 'self' 'unsafe-inline'; frame-ancestors 'none'"; return r
 
 SHELL="""<!doctype html><html><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>{{title}} · Scholar Tracker</title><style>
-*{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#172338;font:15px Arial}header{background:#142b4a;color:white;padding:18px max(18px,calc((100% - 1120px)/2));display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}nav{background:white;padding:13px max(18px,calc((100% - 1120px)/2));display:flex;gap:15px;flex-wrap:wrap;border-bottom:1px solid #dfe6f0}nav a{color:#142b4a;font-weight:bold}a{color:#245eea;text-decoration:none}main{max-width:1120px;margin:25px auto;padding:0 18px}h1{font-size:1.8rem}h2{font-size:1.1rem}.muted{color:#66758a}.panel,.card{background:white;border:1px solid #dfe6f0;border-radius:12px;padding:18px;margin:14px 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px}.metric{font-size:2rem;font-weight:bold;margin-top:8px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}form{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:12px 0}.field{display:flex;flex-direction:column;gap:5px}label{font-weight:bold;font-size:.86rem}input,select{padding:10px;border:1px solid #cbd5e1;border-radius:7px;font:inherit;max-width:100%}button,.btn{background:#245eea;color:white;border:0;border-radius:7px;padding:10px 13px;font-weight:bold;cursor:pointer;display:inline-block}.secondary{background:#e8eef8;color:#142b4a}.table-wrap{overflow:auto;border:1px solid #dfe6f0;border-radius:10px;margin:14px 0}table{border-collapse:collapse;width:100%;background:white}td,th{text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;white-space:normal}th{background:#f8fafc;color:#66758a}.flash,.notice{padding:12px;border-radius:8px;background:#ecfdf5;color:#065f46;margin:12px 0}.notice{background:#eff6ff;color:#1e40af}.auth{max-width:460px;margin:40px auto}.auth input{width:100%}.auth form{display:grid}footer{text-align:center;color:#66758a;padding:25px}</style></head><body><header><div><b>🎓 Scholar Tracker</b><br><small>School attendance and communication</small></div><div>{% if viewer %}{{viewer.full_name}} · {{viewer.role}} · <a style='color:white' href='{{url_for("logout")}}'>Sign out</a>{% else %}Local prototype{% endif %}</div></header>
-{% if viewer %}<nav><a href='{{url_for("home")}}'>Dashboard</a>{% if viewer.role in ['admin','teacher'] %}<a href='{{url_for("attendance")}}'>Lesson attendance</a><a href='{{url_for("reports")}}'>Reports</a>{% endif %}{% if viewer.role=="admin" %}<a href='{{url_for("students")}}'>Students</a><a href='{{url_for("accounts")}}'>Accounts</a><a href='{{url_for("assignments")}}'>Teacher assignments</a>{% endif %}<a href='{{url_for("calendar")}}'>School calendar</a><a href='{{url_for("notifications")}}'>Notifications</a>{% if viewer.role=="parent" %}<a href='{{url_for("parent")}}'>My children</a>{% endif %}</nav>{% endif %}
+*{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#172338;font:15px Arial}header{background:#142b4a;color:white;padding:18px max(18px,calc((100% - 1120px)/2));display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}nav{background:white;padding:13px max(18px,calc((100% - 1120px)/2));display:flex;gap:15px;flex-wrap:wrap;border-bottom:1px solid #dfe6f0}nav a{color:#142b4a;font-weight:bold}a{color:#245eea;text-decoration:none}main{max-width:1120px;margin:25px auto;padding:0 18px}h1{font-size:1.8rem}h2{font-size:1.1rem}.muted{color:#66758a}.badge{display:inline-block;background:#dc2626;color:white;border-radius:999px;padding:2px 7px;font-size:12px;margin-left:4px}.panel,.card{background:white;border:1px solid #dfe6f0;border-radius:12px;padding:18px;margin:14px 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px}.metric{font-size:2rem;font-weight:bold;margin-top:8px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}form{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:12px 0}.field{display:flex;flex-direction:column;gap:5px}label{font-weight:bold;font-size:.86rem}input,select{padding:10px;border:1px solid #cbd5e1;border-radius:7px;font:inherit;max-width:100%}button,.btn{background:#245eea;color:white;border:0;border-radius:7px;padding:10px 13px;font-weight:bold;cursor:pointer;display:inline-block}.secondary{background:#e8eef8;color:#142b4a}.table-wrap{overflow:auto;border:1px solid #dfe6f0;border-radius:10px;margin:14px 0}table{border-collapse:collapse;width:100%;background:white}td,th{text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;white-space:normal}th{background:#f8fafc;color:#66758a}.flash,.notice{padding:12px;border-radius:8px;background:#ecfdf5;color:#065f46;margin:12px 0}.notice{background:#eff6ff;color:#1e40af}.auth{max-width:460px;margin:40px auto}.auth input{width:100%}.auth form{display:grid}footer{text-align:center;color:#66758a;padding:25px}</style></head><body><header><div><b>🎓 Scholar Tracker</b><br><small>School attendance and communication</small></div><div>{% if viewer %}{{viewer.full_name}} · {{viewer.role}} · <a style='color:white' href='{{url_for("logout")}}'>Sign out</a>{% else %}Local prototype{% endif %}</div></header>
+{% if viewer %}<nav><a href='{{url_for("home")}}'>Dashboard</a>{% if viewer.role in ['admin','teacher'] %}<a href='{{url_for("attendance")}}'>Lesson attendance</a><a href='{{url_for("reports")}}'>Reports</a>{% endif %}{% if viewer.role=="admin" %}<a href='{{url_for("students")}}'>Students</a><a href='{{url_for("accounts")}}'>Accounts</a><a href='{{url_for("assignments")}}'>Teacher assignments</a>{% endif %}<a href='{{url_for("calendar")}}'>School calendar</a><a href='{{url_for("notifications")}}'>🔔 Notifications{% if unread_count %}<span class=badge>{{unread_count}}</span>{% endif %}</a>{% if viewer.role=="parent" %}<a href='{{url_for("parent")}}'>My children</a>{% endif %}</nav>{% endif %}
 <main>{% for m in get_flashed_messages() %}<div class=flash>{{m}}</div>{% endfor %}{{body|safe}}</main><footer>Scholar Tracker · Development prototype · Not published</footer></body></html>"""
 def page(title,body,**kw): return render_template_string(SHELL,title=title,body=render_template_string(body,**kw))
 
@@ -285,8 +288,50 @@ def notifications():
    rows=d.execute("SELECT n.*,s.full_name student_name FROM notifications n LEFT JOIN students s ON s.id=n.student_id WHERE n.recipient_user_id=? ORDER BY n.id DESC LIMIT 100",(u["id"],)).fetchall()
   elif u["role"]=="admin": rows=d.execute("SELECT n.*,s.full_name student_name,u.full_name recipient FROM notifications n LEFT JOIN students s ON s.id=n.student_id LEFT JOIN users u ON u.id=n.recipient_user_id ORDER BY n.id DESC LIMIT 100").fetchall()
   else: rows=[]
- body="""<h1>Notifications</h1><div class=notice>Alerts are stored in the app only. SMS, email and push notification services are not connected.</div>{% if rows %}<div class=table-wrap><table><tr><th>Created</th>{% if viewer.role=='admin' %}<th>Parent</th>{% endif %}<th>Student</th><th>Message</th><th>Status</th></tr>{% for n in rows %}<tr><td>{{n.created_at}}</td>{% if viewer.role=='admin' %}<td>{{n.recipient or 'Unlinked'}}</td>{% endif %}<td>{{n.student_name or '—'}}</td><td>{{n.message}}</td><td>{% if viewer.role=='parent' and not n.read_at %}<form method=post><input type=hidden name=_csrf value='{{csrf}}'><input type=hidden name=nid value={{n.id}}><button class=secondary>Mark read</button></form>{% else %}{{'Read' if n.read_at else 'Unread'}}{% endif %}</td></tr>{% endfor %}</table></div>{% else %}<p class=muted>No notifications.</p>{% endif %}"""
+ body="""<h1>Notifications</h1><div class=notice>In-app alerts are available. Allow browser notifications below to receive alerts while Scholar Tracker is open. SMS, email and background push are not connected.</div>{% if viewer.role=='parent' %}<section class=panel><h2>Browser alerts</h2><p class=muted>Enable browser permission to see a pop-up when a new attendance alert arrives while this app is open.</p><button type=button id=enableBrowserAlerts>Enable browser notifications</button><span id=browserAlertStatus class=muted></span></section>{% endif %}{% if rows %}<div class=table-wrap><table><tr><th>Created</th>{% if viewer.role=='admin' %}<th>Parent</th>{% endif %}<th>Student</th><th>Message</th><th>Status</th></tr>{% for n in rows %}<tr><td>{{n.created_at}}</td>{% if viewer.role=='admin' %}<td>{{n.recipient or 'Unlinked'}}</td>{% endif %}<td>{{n.student_name or '—'}}</td><td>{{n.message}}</td><td>{% if viewer.role=='parent' and not n.read_at %}<form method=post><input type=hidden name=_csrf value='{{csrf}}'><input type=hidden name=nid value={{n.id}}><button class=secondary>Mark read</button></form>{% else %}{{'Read' if n.read_at else 'Unread'}}{% endif %}</td></tr>{% endfor %}</table></div>{% else %}<p class=muted>No notifications.</p>{% endif %}"""
  return page("Notifications",body,rows=rows)
+
+@app.route("/api/notifications/latest")
+@roles("parent")
+def latest_notifications():
+ u=who(); after=request.args.get("after","0")
+ try: after_id=max(0,int(after))
+ except (TypeError,ValueError): after_id=0
+ with conn() as d:
+  rows=d.execute("SELECT id,message,created_at FROM notifications WHERE recipient_user_id=? AND id>? ORDER BY id ASC LIMIT 20",(u["id"],after_id)).fetchall()
+ return {"notifications":[{"id":r["id"],"message":r["message"],"created_at":r["created_at"]} for r in rows]}
+
+# Browser notifications work only after permission is granted and while the app is open.
+SHELL = SHELL.replace("</body>", """<script>
+(function(){
+  const button=document.getElementById('enableBrowserAlerts');
+  const status=document.getElementById('browserAlertStatus');
+  if(button){
+    button.addEventListener('click',async function(){
+      if(!('Notification' in window)){status.textContent=' This browser does not support notifications.';return;}
+      const permission=await Notification.requestPermission();
+      status.textContent=permission==='granted'?' Browser notifications enabled.':' Permission not granted.';
+    });
+  }
+  if(!('fetch' in window)) return;
+  let lastId=0, ready=false;
+  async function poll(){
+    try{
+      const response=await fetch('/api/notifications/latest?after='+lastId,{cache:'no-store'});
+      if(!response.ok) return;
+      const data=await response.json();
+      for(const item of data.notifications||[]){
+        lastId=Math.max(lastId,item.id);
+        if(ready && 'Notification' in window && Notification.permission==='granted'){
+          new Notification('Scholar Tracker', {body:item.message,tag:'scholar-'+item.id});
+        }
+      }
+      ready=true;
+    }catch(error){ /* Keep the app usable if notifications are unavailable. */ }
+  }
+  if(document.querySelector('a[href*="/notifications"]')){poll();setInterval(poll,30000);}
+})();
+</script></body>""")
 
 @app.route("/health")
 def health(): return {"status":"ok","app":"Scholar Tracker","published":False}
