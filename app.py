@@ -219,7 +219,16 @@ def timetable_page():
     selected_teacher = request.values.get("teacher_name", "").strip()
     selected_class = request.values.get("class_name", "").strip()
     with connect_db() as db:
-        if request.method == "POST":
+        if request.method == "POST" and request.form.get("delete_id"):
+            try:
+                lesson_id = int(request.form.get("delete_id"))
+                db.execute("DELETE FROM teacher_timetable WHERE id=?", (lesson_id,))
+                db.commit()
+                flash("Timetable lesson deleted.")
+                return redirect(url_for("timetable_page", weekday=selected_day, teacher_name=selected_teacher, class_name=selected_class))
+            except (ValueError, sqlite3.Error):
+                flash("Could not delete that timetable entry.")
+        elif request.method == "POST":
             weekday = request.form.get("weekday", "").strip()
             teacher = request.form.get("teacher_name", "").strip()
             subject = request.form.get("subject", "").strip()
@@ -257,15 +266,6 @@ def timetable_page():
                     db.commit()
                     flash("Lesson added to the teachers timetable.")
                     return redirect(url_for("timetable_page", weekday=weekday, teacher_name=teacher))
-        if request.method == "POST" and request.form.get("delete_id"):
-            try:
-                lesson_id = int(request.form.get("delete_id"))
-                db.execute("DELETE FROM teacher_timetable WHERE id=?", (lesson_id,))
-                db.commit()
-                flash("Timetable lesson deleted.")
-                return redirect(url_for("timetable_page", weekday=selected_day, teacher_name=selected_teacher, class_name=selected_class))
-            except (ValueError, sqlite3.Error):
-                flash("Could not delete that timetable entry.")
         teachers = [r["teacher_name"] for r in db.execute("SELECT DISTINCT teacher_name FROM teacher_timetable ORDER BY teacher_name").fetchall()]
         classes = [r["class_name"] for r in db.execute("SELECT DISTINCT class_name FROM teacher_timetable ORDER BY class_name").fetchall()]
         sql = "SELECT * FROM teacher_timetable WHERE weekday=?"
