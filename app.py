@@ -63,7 +63,7 @@ def guard():
 def globals_():
  if not session.get("csrf"): session["csrf"]=secrets.token_urlsafe(32)
  u=who(); unread_count=0
- if u and u["role"]=="parent":
+ if u and u["role"] in ("parent","teacher"):
   with conn() as d: unread_count=d.execute("SELECT COUNT(*) FROM notifications WHERE recipient_user_id=? AND read_at IS NULL",(u["id"],)).fetchone()[0]
  return {"csrf":session["csrf"],"viewer":u,"unread_count":unread_count}
 @app.after_request
@@ -339,7 +339,7 @@ def notifications():
    rows=d.execute("SELECT n.*,s.full_name student_name FROM notifications n LEFT JOIN students s ON s.id=n.student_id WHERE n.recipient_user_id=? ORDER BY n.id DESC LIMIT 100",(u["id"],)).fetchall()
   elif u["role"]=="admin": rows=d.execute("SELECT n.*,s.full_name student_name,u.full_name recipient FROM notifications n LEFT JOIN students s ON s.id=n.student_id LEFT JOIN users u ON u.id=n.recipient_user_id ORDER BY n.id DESC LIMIT 100").fetchall()
   else: rows=[]
- body="""<h1>Notifications</h1><div class=notice>In-app alerts are available. Allow browser notifications below to receive alerts while Scholar Tracker is open. SMS, email and background push are not connected.</div>{% if viewer.role=='parent' %}<section class=panel><h2>Browser alerts</h2><p class=muted>Enable browser permission to see a pop-up when a new attendance alert arrives while this app is open.</p><button type=button id=enableBrowserAlerts>Enable browser notifications</button><span id=browserAlertStatus class=muted></span></section>{% endif %}{% if rows %}<div class=table-wrap><table><tr><th>Created</th>{% if viewer.role=='admin' %}<th>Parent</th>{% endif %}<th>Student</th><th>Message</th><th>Status</th></tr>{% for n in rows %}<tr><td>{{n.created_at}}</td>{% if viewer.role=='admin' %}<td>{{n.recipient or 'Unlinked'}}</td>{% endif %}<td>{{n.student_name or '—'}}</td><td>{{n.message}}</td><td>{% if viewer.role in ['parent','teacher'] and not n.read_at %}<form method=post><input type=hidden name=_csrf value='{{csrf}}'><input type=hidden name=nid value={{n.id}}><button class=secondary>Mark read</button></form>{% else %}{{'Read' if n.read_at else 'Unread'}}{% endif %}</td></tr>{% endfor %}</table></div>{% else %}<p class=muted>No notifications.</p>{% endif %}"""
+ body="""<h1>Notifications</h1><div class=notice>In-app alerts are available. Allow browser notifications below to receive alerts while Scholar Tracker is open. SMS, email and background push are not connected.</div>{% if viewer.role in ['parent','teacher'] %}<section class=panel><h2>Browser alerts</h2><p class=muted>Enable browser permission to see a pop-up when a new attendance alert arrives while this app is open.</p><button type=button id=enableBrowserAlerts>Enable browser notifications</button><span id=browserAlertStatus class=muted></span></section>{% endif %}{% if rows %}<div class=table-wrap><table><tr><th>Created</th>{% if viewer.role=='admin' %}<th>Parent</th>{% endif %}<th>Student</th><th>Message</th><th>Status</th></tr>{% for n in rows %}<tr><td>{{n.created_at}}</td>{% if viewer.role=='admin' %}<td>{{n.recipient or 'Unlinked'}}</td>{% endif %}<td>{{n.student_name or '—'}}</td><td>{{n.message}}</td><td>{% if viewer.role in ['parent','teacher'] and not n.read_at %}<form method=post><input type=hidden name=_csrf value='{{csrf}}'><input type=hidden name=nid value={{n.id}}><button class=secondary>Mark read</button></form>{% else %}{{'Read' if n.read_at else 'Unread'}}{% endif %}</td></tr>{% endfor %}</table></div>{% else %}<p class=muted>No notifications.</p>{% endif %}"""
  return page("Notifications",body,rows=rows)
 
 @app.route("/api/notifications/latest")
@@ -372,7 +372,14 @@ SHELL = SHELL.replace("</body>", """<script>
       const response=await fetch('/api/notifications/latest?after='+lastId,{cache:'no-store'});
       if(!response.ok) return;
       const data=await response.json();
-      if(!ready){lastId=Math.max(lastId,data.latest_id||0);ready=true;return;}
+      if(!ready){
+        lastId=Math.max(lastId,data.latest_id||0);ready=true;
+        const recent=(data.notifications||[]).filter(item=>(Date.now()-new Date(item.created_at+'Z').getTime())<90000);
+        for(const item of recent){
+          if('Notification' in window && Notification.permission==='granted') new Notification('Scholar Tracker',{body:item.message,tag:'scholar-'+item.id});
+        }
+        return;
+      }
       for(const item of data.notifications||[]){
         lastId=Math.max(lastId,item.id);
         if('Notification' in window && Notification.permission==='granted'){
