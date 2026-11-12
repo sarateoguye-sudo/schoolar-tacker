@@ -60,6 +60,8 @@ class ScholarTrackerTests(unittest.TestCase):
         original_env = scholar.APP_ENV
         original_token = os.environ.pop("SETUP_TOKEN", None)
         try:
+            with scholar.conn() as db:
+                db.execute("DELETE FROM users WHERE role='admin'")
             scholar.APP_ENV = "production"
             response = self.client.get("/setup")
             self.assertEqual(response.status_code, 503)
@@ -73,6 +75,8 @@ class ScholarTrackerTests(unittest.TestCase):
         original_env = scholar.APP_ENV
         original_token = os.environ.get("SETUP_TOKEN")
         try:
+            with scholar.conn() as db:
+                db.execute("DELETE FROM users WHERE role='admin'")
             scholar.APP_ENV = "production"
             os.environ["SETUP_TOKEN"] = "expected-test-token"
             response = self.client.post(
