@@ -13,3 +13,4 @@ os.environ["RATELIMIT_STORAGE_URI"] = "memory://"
 # Disable IP throttles in unit tests; rate limiting is tested separately in deployment checks.
 import app as _scholar_app
 _scholar_app.app.config["RATELIMIT_ENABLED"] = False
+_scholar_app.limiter.enabled = False
