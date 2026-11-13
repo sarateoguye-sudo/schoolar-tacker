@@ -1,0 +1,32 @@
+name: Scholar Tracker tests
+
+on:
+  push:
+    branches: [main, phase2-parent-portal-tests, feature/parent-portal-phase2]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      RATELIMIT_STORAGE_URI: memory://
+      ADMIN_USERNAME: test-admin
+      ADMIN_PASSWORD: test-only-password-12345
+      SECRET_KEY: test-only-secret-key-never-use-in-production
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Check Python syntax
+        run: python -m compileall -q .
+      - name: Run tests
+        run: python -m pytest -q
