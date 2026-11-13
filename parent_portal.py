@@ -328,7 +328,7 @@ def register_parent_portal(app, connect_db, admin_required, limiter, csrf_field,
                     (student["school_id"], student["id"], email, token_digest(raw_token), expires, str(session.get("admin_username", "admin"))),
                 )
                 db.commit()
-            accept_url = url_for("parent_accept_invitation", token=raw_token, _external=True)
+            accept_url = url_for("parent_accept_invitation", token=raw_token, _external=True, _scheme="https")
             body = (
                 "You have been invited to create or extend a Scholar Tracker parent account.\n\n"
                 f"Learner: {student['full_name']}\n"
@@ -383,7 +383,7 @@ def register_parent_portal(app, connect_db, admin_required, limiter, csrf_field,
                     else:
                         raw_token = None
                 if raw_token:
-                    reset_url = url_for("parent_reset_password", token=raw_token, _external=True)
+                    reset_url = url_for("parent_reset_password", token=raw_token, _external=True, _scheme="https")
                     delivered = send_email(
                         email,
                         "Reset your Scholar Tracker password",
