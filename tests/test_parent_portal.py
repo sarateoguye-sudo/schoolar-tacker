@@ -3,7 +3,6 @@ import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
 
-import pytest
 from werkzeug.security import generate_password_hash
 
 import app as scholar_app
