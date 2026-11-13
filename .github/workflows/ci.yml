@@ -1,8 +1,8 @@
-name: Scholar Tracker CI
+name: Scholar Tracker tests
 
 on:
   push:
-    branches: [main, feature/parent-portal-phase2]
+    branches: [main, phase2-parent-portal-tests, feature/parent-portal-phase2]
   pull_request:
     branches: [main]
 
@@ -27,6 +27,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest
       - name: Check Python syntax
-        run: python -m compileall -q app.py resilience.py parent_portal.py tests
+        run: python -m compileall -q .
       - name: Run tests
         run: python -m pytest -q
