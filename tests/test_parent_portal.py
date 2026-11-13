@@ -88,6 +88,7 @@ def invite_parent(client, monkeypatch, student_id, email):
     )
     assert response.status_code == 200
     assert captured["recipient"] == email.lower()
+    assert "https://localhost/parents/accept-invitation?token=" in captured["body"]
     match = re.search(r"token=([A-Za-z0-9_-]+)", captured["body"])
     assert match, "Invitation email should contain a secure accept link"
     return match.group(1)
