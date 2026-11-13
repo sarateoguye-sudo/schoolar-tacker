@@ -187,7 +187,7 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 <header><div><strong>School management</strong><br><span>Welcome to your Scholar Tracker workspace</span></div><div><span>● Demo workspace · Sample data</span></div></header>
 <nav>
 {% if session.get('role') == 'admin' %}
-<a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('admin_teachers') }}">Teacher accounts</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a><a href="{{ url_for('attendance_risk') }}">Attendance follow-up</a><a href="{{ url_for('unmarked_registers') }}">Unmarked registers</a><a href="{{ url_for('school_notices') }}">School notices</a><a href="{{ url_for('champion_tasks') }}">Champion tasks</a><a href="{{ url_for('audit_log') }}">Audit log</a><form method="post" action="{{ url_for('admin_logout') }}"><button type="submit">Admin logout</button></form>
+<a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('admin_teachers') }}">Teacher accounts</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a><a href="{{ url_for('parent_invitations') }}">Parent invitations</a><a href="{{ url_for('attendance_risk') }}">Attendance follow-up</a><a href="{{ url_for('unmarked_registers') }}">Unmarked registers</a><a href="{{ url_for('school_notices') }}">School notices</a><a href="{{ url_for('champion_tasks') }}">Champion tasks</a><a href="{{ url_for('audit_log') }}">Audit log</a><form method="post" action="{{ url_for('admin_logout') }}"><button type="submit">Admin logout</button></form>
 {% elif session.get('role') == 'teacher' %}
 <a href="{{ url_for('teacher_portal') }}">My lessons</a><form method="post" action="{{ url_for('teacher_logout') }}"><button type="submit">Teacher logout</button></form>
 {% else %}
@@ -747,10 +747,13 @@ def health():
     return {"status":"ok","app":"Scholar Tracker"}
 
 from resilience import register_resilience_routes, init_resilience_db
+from parent_portal import init_parent_portal_db, register_parent_portal
 
-register_resilience_routes(app, connect_db, admin_required, teacher_required, page)
 init_db()
 init_resilience_db(connect_db)
+init_parent_portal_db(connect_db)
+register_resilience_routes(app, connect_db, admin_required, teacher_required, page)
+register_parent_portal(app, connect_db, admin_required, limiter, csrf_field, page)
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "5000")), debug=False)
