@@ -12,3 +12,4 @@ os.environ["RATELIMIT_STORAGE_URI"] = "memory://"
 
 import app as scholar_app
 scholar_app.app.config["RATELIMIT_ENABLED"] = False
+scholar_app.limiter.enabled = False
