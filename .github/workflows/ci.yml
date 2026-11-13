@@ -23,4 +23,4 @@ jobs:
       - name: Check Python syntax
         run: python -m compileall -q app.py tests
       - name: Run smoke tests
-        run: pytest -q
+        run: python -m pytest -q
