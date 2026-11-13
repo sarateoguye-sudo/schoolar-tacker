@@ -169,10 +169,6 @@ nav{position:fixed;left:0;top:0;bottom:0;width:248px;background:#fff;padding:25p
 nav:before{content:"🎓  SCHOLAR TRACKER";display:block;font-weight:850;letter-spacing:-.035em;font-size:1rem;color:#23365e;padding:5px 12px 30px}
 nav:after{content:"SCHOOL WORKSPACE  ·  DEMO";font-size:.67rem;letter-spacing:.09em;font-weight:800;color:#a0aabd;padding:20px 12px 5px;order:20}
 a{color:var(--blue);text-decoration:none}nav a{font-weight:650;color:#66738a;font-size:.9rem;padding:12px 13px;border-radius:11px;display:flex;align-items:center;gap:10px;transition:background .15s,color .15s}nav a:hover{background:#f0f3ff;color:var(--blue)}nav a:focus{outline:2px solid #aebeff}
-.install-app{background:#4263eb;color:#fff;border:0;border-radius:9px;padding:9px 13px;font:inherit;font-weight:750;cursor:pointer;box-shadow:none}
-.install-app[hidden]{display:none}
-.app-install-area{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.app-install-status{font-size:.78rem;color:var(--muted)}
 main{max-width:1440px;margin:0 auto 0 248px;padding:34px 36px;min-height:calc(100vh - 140px)}.muted{color:var(--muted)}h1{font-size:clamp(1.65rem,2.5vw,2.15rem);letter-spacing:-.045em;margin:0 0 8px;font-weight:800;color:#17243b}h2{font-size:1.02rem;margin-top:0;letter-spacing:-.02em;color:#25334e}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:18px;margin:25px 0}.card,.panel{background:var(--white);border:1px solid var(--line);border-radius:17px;padding:23px;box-shadow:var(--shadow)}
 .metric{font-size:2.25rem;font-weight:800;letter-spacing:-.055em;margin-top:12px;color:#1d2e50}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:18px}
