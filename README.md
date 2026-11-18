@@ -86,6 +86,11 @@ Keeping student records, attendance, lesson information, and school dates organi
 - Attendance reports: `/reports`
 - School calendar: `/calendar`
 - Demo notifications: `/notifications`
+- Parent registration: `/parents/register`
+- Parent login: `/parents/login`
+- Parents' dashboard: `/parents/dashboard` (sign-in required)
+- Parent-child link approvals: `/admin/parent-requests` (administrator session required)
+- Parent inquiries: `/admin/parent-messages` (administrator session required)
 - Health check: `/health`
 
 ## Security and privacy notice
