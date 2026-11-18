@@ -772,7 +772,7 @@ def notifications_page():
     with connect_db() as db:
         rows = db.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT 100").fetchall()
     body = """
-    <h1>Parent notifications</h1><p class="muted">Preview attendance alerts generated when a student with a parent contact is marked absent.</p>
+    <h1>Parent notifications</h1><p class="muted">Preview attendance alerts generated when a student with a parent contact is marked absent.</p><p><a class="btn" href="{{url_for('parent_portal.admin_parent_requests')}}">Review parent-child link requests</a> <a class="btn" href="{{url_for('parent_portal.admin_parent_messages')}}">Open parent inquiries</a></p>
     <div class="notice">Prototype limitation: these are stored in the app only. SMS, email and push notifications are not connected, and no messages are sent.</div>
     {% if rows %}<div class="table-wrap"><table><tr><th>Created</th><th>Recipient</th><th>Message</th><th>Status</th></tr>{% for r in rows %}<tr><td>{{r.created_at}}</td><td>{{r.recipient}}</td><td>{{r.message}}</td><td>{{r.status}}</td></tr>{% endfor %}</table></div>{% else %}<p class="muted">No demo notifications yet. Add a parent contact to a student, then mark that student absent.</p>{% endif %}
     """
