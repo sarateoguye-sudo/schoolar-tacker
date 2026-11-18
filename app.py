@@ -111,6 +111,20 @@ def init_db():
             password_hash TEXT NOT NULL,
             active INTEGER NOT NULL DEFAULT 1
         );
+        CREATE TABLE IF NOT EXISTS parent_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            parent_name TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS parent_student_links (
+            parent_id INTEGER NOT NULL REFERENCES parent_users(id) ON DELETE CASCADE,
+            student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(parent_id, student_id)
+        );
         CREATE TABLE IF NOT EXISTS teacher_timetable (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             weekday TEXT NOT NULL,
@@ -125,6 +139,30 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         """)
+        # Migrate any earlier parent-account table shape without deleting its data.
+        # Legacy tables are retained for review; new portal queries use this schema.
+        parent_columns = {row["name"] for row in db.execute("PRAGMA table_info(parent_users)").fetchall()}
+        if parent_columns and not {"username", "parent_name", "password_hash", "active"}.issubset(parent_columns):
+            link_table_exists = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='parent_student_links'"
+            ).fetchone()
+            if link_table_exists:
+                db.execute("ALTER TABLE parent_student_links RENAME TO parent_student_links_legacy")
+            db.execute("ALTER TABLE parent_users RENAME TO parent_users_legacy")
+            db.execute("""CREATE TABLE parent_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                parent_name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )""")
+            db.execute("""CREATE TABLE parent_student_links (
+                parent_id INTEGER NOT NULL REFERENCES parent_users(id) ON DELETE CASCADE,
+                student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(parent_id, student_id)
+            )""")
         # Seed clearly labelled demo lessons only when the timetable is empty.
         # These entries make the demo teacher portal testable without pretending
         # to represent a real school's timetable.
@@ -190,11 +228,13 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 <header><div><strong>School management</strong><br><span>Welcome to your Scholar Tracker workspace</span></div><div class="app-install-area"><button class="install-app" id="installAppButton" type="button" hidden>Install app</button><span class="app-install-status" id="appInstallStatus">Add to home screen from your browser menu</span><span>● Demo workspace · Sample data</span></div></header>
 <nav>
 {% if session.get('role') == 'admin' %}
-<a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('admin_teachers') }}">Teacher accounts</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a><form method="post" action="{{ url_for('admin_logout') }}"><button type="submit">Admin logout</button></form>
+<a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('admin_teachers') }}">Teacher accounts</a><a href="{{ url_for('admin_parents') }}">Parent accounts</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a><form method="post" action="{{ url_for('admin_logout') }}">{{ csrf_field() }}<button type="submit">Admin logout</button></form>
 {% elif session.get('role') == 'teacher' %}
-<a href="{{ url_for('teacher_portal') }}">My lessons</a><form method="post" action="{{ url_for('teacher_logout') }}"><button type="submit">Teacher logout</button></form>
+<a href="{{ url_for('teacher_portal') }}">My lessons</a><form method="post" action="{{ url_for('teacher_logout') }}">{{ csrf_field() }}<button type="submit">Teacher logout</button></form>
+{% elif session.get('role') == 'parent' %}
+<a href="{{ url_for('parent_portal') }}">My children's portal</a><form method="post" action="{{ url_for('parent_logout') }}">{{ csrf_field() }}<button type="submit">Parent logout</button></form>
 {% else %}
-<a href="{{ url_for('admin_login') }}">Administrator login</a><a href="{{ url_for('teacher_login') }}">Teacher login</a>
+<a href="{{ url_for('admin_login') }}">Administrator login</a><a href="{{ url_for('teacher_login') }}">Teacher login</a><a href="{{ url_for('parent_login') }}">Parent login</a>
 {% endif %}
 <a href="{{ url_for('parent_calendar') }}">Parent calendar view</a>
 </nav>
@@ -356,6 +396,7 @@ def admin_teachers():
     body = """
     <h1>Teacher accounts</h1>
     <p class="muted">Create named accounts for staff. Never share accounts between teachers.</p>
+    <p><a class="btn" href="{{url_for('admin_teacher_assignments')}}">Assign subjects, classes and streams</a></p>
     <section class="panel"><h2>Create teacher account</h2>
       <form method="post">
         <div class="field"><label>Username</label><input name="username" minlength="3" autocomplete="off" required></div>
@@ -370,6 +411,156 @@ def admin_teachers():
     </td></tr>{% endfor %}</table></div>
     """
     return page("Teacher accounts", body, teachers=teachers)
+
+
+@app.route("/admin/parents", methods=["GET", "POST"])
+@admin_required
+def admin_parents():
+    with connect_db() as db:
+        if request.method == "POST":
+            action = request.form.get("action", "create")
+            if action == "link":
+                try:
+                    parent_id = int(request.form.get("parent_id", ""))
+                    student_id = int(request.form.get("student_id", ""))
+                    parent = db.execute("SELECT id FROM parent_users WHERE id=? AND active=1", (parent_id,)).fetchone()
+                    student = db.execute("SELECT id FROM students WHERE id=?", (student_id,)).fetchone()
+                    if not parent or not student:
+                        flash("Choose an active parent account and a valid student.")
+                    else:
+                        db.execute("INSERT OR IGNORE INTO parent_student_links(parent_id,student_id) VALUES(?,?)", (parent_id, student_id))
+                        db.commit()
+                        flash("Student linked to parent account.")
+                except (TypeError, ValueError, sqlite3.IntegrityError):
+                    flash("Could not link that student. Check the selections and try again.")
+                return redirect(url_for("admin_parents"))
+            username = request.form.get("username", "").strip()
+            parent_name = request.form.get("parent_name", "").strip()
+            password = request.form.get("password", "")
+            try:
+                student_id = int(request.form.get("student_id", ""))
+            except ValueError:
+                student_id = 0
+            student = db.execute("SELECT id FROM students WHERE id=?", (student_id,)).fetchone()
+            if not username or not parent_name or len(password) < 12 or not student:
+                flash("Enter a username, parent name, password of at least 12 characters, and select a student.")
+            else:
+                try:
+                    cursor = db.execute("INSERT INTO parent_users(username,parent_name,password_hash) VALUES(?,?,?)",
+                                        (username, parent_name, generate_password_hash(password)))
+                    db.execute("INSERT INTO parent_student_links(parent_id,student_id) VALUES(?,?)", (cursor.lastrowid, student_id))
+                    db.commit()
+                    flash("Parent account created and linked to the selected student. Share credentials privately.")
+                    return redirect(url_for("admin_parents"))
+                except sqlite3.IntegrityError:
+                    flash("That username already exists. Choose another username.")
+        parents = db.execute("""SELECT p.id,p.username,p.parent_name,p.active,COUNT(l.student_id) AS child_count
+                                FROM parent_users p LEFT JOIN parent_student_links l ON l.parent_id=p.id
+                                GROUP BY p.id ORDER BY p.parent_name""").fetchall()
+        students = db.execute("SELECT id,admission_no,full_name,class_name,stream FROM students ORDER BY class_name,stream,full_name").fetchall()
+        links = db.execute("""SELECT l.parent_id,l.student_id,p.parent_name,p.username,s.full_name,s.admission_no,s.class_name,s.stream
+                              FROM parent_student_links l JOIN parent_users p ON p.id=l.parent_id
+                              JOIN students s ON s.id=l.student_id ORDER BY p.parent_name,s.full_name""").fetchall()
+    body = """
+    <h1>Parent accounts</h1><p class="muted">Create a secure parent login and link it only to that parent's verified child or children.</p>
+    <div class="notice"><strong>Privacy rule:</strong> parents can see attendance only for students linked to their account. Verify the family relationship before sharing login details. Use fictional data while testing.</div>
+    <section class="panel"><h2>Create parent account</h2>
+    {% if students %}<form method="post">
+      <div class="field"><label>Parent / guardian name</label><input name="parent_name" maxlength="120" required></div>
+      <div class="field"><label>Username</label><input name="username" maxlength="80" autocomplete="off" required></div>
+      <div class="field"><label>Temporary password (12+ characters)</label><input type="password" name="password" minlength="12" autocomplete="new-password" required></div>
+      <div class="field"><label>Link first child</label><select name="student_id" required>{% for s in students %}<option value="{{s.id}}">{{s.full_name}} · {{s.admission_no}} · {{s.class_name}} {{s.stream}}</option>{% endfor %}</select></div>
+      <button type="submit">Create parent account</button>
+    </form>{% else %}<p>Add students before creating parent accounts.</p>{% endif %}</section>
+    <section class="panel"><h2>Link another child</h2>
+    {% if parents and students %}<form method="post"><input type="hidden" name="action" value="link">
+      <div class="field"><label>Parent account</label><select name="parent_id" required>{% for p in parents %}{% if p.active %}<option value="{{p.id}}">{{p.parent_name}} ({{p.username}})</option>{% endif %}{% endfor %}</select></div>
+      <div class="field"><label>Child</label><select name="student_id" required>{% for s in students %}<option value="{{s.id}}">{{s.full_name}} · {{s.admission_no}} · {{s.class_name}} {{s.stream}}</option>{% endfor %}</select></div>
+      <button type="submit">Link child</button>
+    </form>{% else %}<p>Create a parent account and add students first.</p>{% endif %}</section>
+    <section class="panel"><h2>Existing parent accounts</h2>{% if parents %}<div class="table-wrap"><table><tr><th>Parent</th><th>Username</th><th>Linked children</th><th>Status</th></tr>
+    {% for p in parents %}<tr><td>{{p.parent_name}}</td><td>{{p.username}}</td><td>{{p.child_count}}</td><td>{{'Active' if p.active else 'Disabled'}}</td></tr>{% endfor %}</table></div>{% else %}<p class="muted">No parent accounts created yet.</p>{% endif %}</section>
+    <section class="panel"><h2>Linked children</h2>{% if links %}<div class="table-wrap"><table><tr><th>Parent</th><th>Student</th><th>Admission no.</th><th>Class / stream</th></tr>
+    {% for l in links %}<tr><td>{{l.parent_name}} ({{l.username}})</td><td>{{l.full_name}}</td><td>{{l.admission_no}}</td><td>{{l.class_name}} / {{l.stream}}</td></tr>{% endfor %}</table></div>{% else %}<p class="muted">No parent-child links yet.</p>{% endif %}</section>
+    """
+    return page("Parent accounts", body, parents=parents, students=students, links=links)
+
+
+@app.route("/parent/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute")
+def parent_login():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        with connect_db() as db:
+            user = db.execute("SELECT * FROM parent_users WHERE username=? AND active=1", (username,)).fetchone()
+        if user and check_password_hash(user["password_hash"], password):
+            session.clear()
+            session["role"] = "parent"
+            session["parent_user_id"] = user["id"]
+            session["parent_name"] = user["parent_name"]
+            session.permanent = True
+            return redirect(url_for("parent_portal"))
+        flash("Login failed. Check your username and password, or contact the school administrator.")
+    body = """
+    <h1>Parents' Portal login</h1><p class="muted">Sign in to view attendance and school information for your linked children.</p>
+    <section class="panel" style="max-width:520px"><form method="post">
+      <div class="field"><label>Username</label><input name="username" autocomplete="username" required></div>
+      <div class="field"><label>Password</label><input type="password" name="password" autocomplete="current-password" required></div>
+      <button type="submit">Sign in to Parents' Portal</button></form></section>
+    <p class="muted">Your school administrator must create your account and verify the child linked to it.</p>
+    """
+    return page("Parents' Portal login", body)
+
+
+@app.route("/parent/logout", methods=["POST"])
+def parent_logout():
+    if session.get("role") != "parent":
+        return redirect(url_for("parent_login"))
+    session.clear()
+    flash("You have been logged out.")
+    return redirect(url_for("parent_login"))
+
+
+@app.route("/parent/portal")
+def parent_portal():
+    if session.get("role") != "parent" or "parent_user_id" not in session:
+        return redirect(url_for("parent_login", next=request.path))
+    parent_id = session["parent_user_id"]
+    chosen_student = request.args.get("student_id", "").strip()
+    with connect_db() as db:
+        students = db.execute("""SELECT s.id,s.admission_no,s.full_name,s.class_name,s.stream
+                                 FROM parent_student_links l JOIN students s ON s.id=l.student_id
+                                 JOIN parent_users p ON p.id=l.parent_id
+                                 WHERE l.parent_id=? AND p.active=1
+                                 ORDER BY s.class_name,s.stream,s.full_name""", (parent_id,)).fetchall()
+        if chosen_student and not any(str(s["id"]) == chosen_student for s in students):
+            abort(403, description="That student is not linked to your parent account.")
+        if not chosen_student and students:
+            chosen_student = str(students[0]["id"])
+        attendance, selected = [], None
+        if chosen_student:
+            selected = next((s for s in students if str(s["id"]) == chosen_student), None)
+            attendance = db.execute("""SELECT lesson_date,subject,status,marked_by FROM attendance
+                                       WHERE student_id=? ORDER BY lesson_date DESC,id DESC LIMIT 50""",
+                                    (int(chosen_student),)).fetchall()
+        events = db.execute("SELECT event_date,title,details FROM events WHERE event_date>=? ORDER BY event_date LIMIT 8",
+                            (date.today().isoformat(),)).fetchall()
+    body = """
+    <div style="display:flex;justify-content:space-between;gap:14px;align-items:start;flex-wrap:wrap">
+      <div><h1>Parents' Portal</h1><p class="muted">Welcome, {{parent_name}}. Here is attendance and school information for your linked children.</p></div>
+      <form method="post" action="{{url_for('parent_logout')}}" style="margin:0"><button type="submit">Log out</button></form>
+    </div>
+    {% if students %}<section class="panel"><form method="get"><div class="field"><label>Select child</label><select name="student_id" required>{% for s in students %}<option value="{{s.id}}" {% if selected and s.id==selected.id %}selected{% endif %}>{{s.full_name}} · {{s.class_name}} / {{s.stream}}</option>{% endfor %}</select></div><button type="submit">View attendance</button></form>
+      {% if selected %}<p><strong>{{selected.full_name}}</strong> · Admission no. {{selected.admission_no}} · {{selected.class_name}} / {{selected.stream}}</p>{% endif %}</section>
+      <section class="panel"><h2>Recent attendance</h2>{% if attendance %}<div class="table-wrap"><table><tr><th>Date</th><th>Subject</th><th>Status</th><th>Recorded by</th></tr>
+      {% for a in attendance %}<tr><td>{{a.lesson_date}}</td><td>{{a.subject}}</td><td><span class="pill">{{a.status}}</span></td><td>{{a.marked_by}}</td></tr>{% endfor %}</table></div>{% else %}<p class="muted">No attendance records are available for this child yet.</p>{% endif %}</section>
+    {% else %}<section class="panel"><h2>No child linked yet</h2><p>Contact your school administrator to verify and link your child to this account.</p></section>{% endif %}
+    <section class="panel"><h2>Upcoming school events</h2>{% if events %}{% for e in events %}<p><strong>{{e.event_date}}</strong> — {{e.title}}<br><span class="muted">{{e.details or 'No additional details'}}</span></p>{% endfor %}{% else %}<p class="muted">No upcoming events have been published.</p>{% endif %}</section>
+    <p class="muted">Privacy: this account can only access students linked by the school administrator. Attendance records are shown as recorded by the school.</p>
+    """
+    return page("Parents' Portal", body, parent_name=session.get("parent_name", "Parent"), students=students, selected=selected, attendance=attendance, events=events)
+
 
 @app.route("/teacher/login", methods=["GET", "POST"])
 @limiter.limit("5 per minute")
@@ -416,7 +607,7 @@ def teacher_portal():
                              (teacher_name, weekday)).fetchall()
     body = """
     <div style="display:flex;justify-content:space-between;gap:14px;align-items:start;flex-wrap:wrap">
-      <div><h1>Teacher portal</h1><p class="muted">Welcome, {{teacher_name}}. Your assigned lessons and class registers are below.</p></div>
+      <div><h1>Teacher portal</h1><p class="muted">Welcome, {{teacher_name}}. Your assigned lessons and class registers are below.</p><p><a class="btn" href="{{url_for('assigned_registers')}}">Open my assigned classes and registers</a></p></div>
       <form method="post" action="{{url_for('teacher_logout')}}" style="margin:0"><button type="submit">Log out</button></form>
     </div>
     <section class="panel"><form method="get"><div class="field"><label>Teaching date</label><input type="date" name="lesson_date" value="{{chosen_date}}" required></div><button>View day</button></form></section>
@@ -772,7 +963,7 @@ def notifications_page():
     with connect_db() as db:
         rows = db.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT 100").fetchall()
     body = """
-    <h1>Parent notifications</h1><p class="muted">Preview attendance alerts generated when a student with a parent contact is marked absent.</p>
+    <h1>Parent notifications</h1><p class="muted">Preview attendance alerts generated when a student with a parent contact is marked absent.</p><p><a class="btn" href="{{url_for('parent_portal.admin_parent_requests')}}">Review parent-child link requests</a> <a class="btn" href="{{url_for('parent_portal.admin_parent_messages')}}">Open parent inquiries</a></p>
     <div class="notice">Prototype limitation: these are stored in the app only. SMS, email and push notifications are not connected, and no messages are sent.</div>
     {% if rows %}<div class="table-wrap"><table><tr><th>Created</th><th>Recipient</th><th>Message</th><th>Status</th></tr>{% for r in rows %}<tr><td>{{r.created_at}}</td><td>{{r.recipient}}</td><td>{{r.message}}</td><td>{{r.status}}</td></tr>{% endfor %}</table></div>{% else %}<p class="muted">No demo notifications yet. Add a parent contact to a student, then mark that student absent.</p>{% endif %}
     """
@@ -782,7 +973,12 @@ def notifications_page():
 def health():
     return {"status":"ok","app":"Scholar Tracker"}
 
+from parent_portal import register_parent_portal
+register_parent_portal(app, connect_db, csrf_field)
+
 init_db()
+from teacher_assignments import register_teacher_assignments
+register_teacher_assignments(app, connect_db, csrf_field)
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "5000")), debug=False)
