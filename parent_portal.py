@@ -57,7 +57,7 @@ def register_parent_portal(app, connect_db, csrf_field):
         return wrapped
 
     def parent_page(title, body, **context):
-        body = re.sub(r'(<form\\b[^>]*method="post"[^>]*>)', r'\\1{{ csrf_field() }}', body, flags=re.I)
+        body = re.sub(r'(<form\b[^>]*method="post"[^>]*>), r'\1{{ csrf_field() }}', body, flags=re.I)
         shell = """
         <!doctype html><html lang="en"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -100,7 +100,7 @@ def register_parent_portal(app, connect_db, csrf_field):
             password = request.form.get("password", "")
             if not name or not email or not phone or len(password) < 12:
                 flash("Complete every field and use a password of at least 12 characters.")
-            elif not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+", email):
+            elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
                 flash("Enter a valid email address.")
             else:
                 try:
