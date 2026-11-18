@@ -782,6 +782,9 @@ def notifications_page():
 def health():
     return {"status":"ok","app":"Scholar Tracker"}
 
+from parent_portal import register_parent_portal
+register_parent_portal(app, connect_db, csrf_field)
+
 init_db()
 
 if __name__ == "__main__":
