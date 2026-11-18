@@ -112,20 +112,20 @@ class SecurityTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Sample Guardian", response.data)
-        self.client.post("/admin/logout", data={"csrf_token": csrf_token(self.client.get("/"))})
-        parent_page = self.client.get("/parent/login")
+        parent_client = client_factory()
+        parent_page = parent_client.get("/parent/login")
         token = csrf_token(parent_page)
-        response = self.client.post(
+        response = parent_client.post(
             "/parent/login",
             data={"csrf_token": token, "username": "sample-guardian", "password": "sample-guardian-password"},
         )
         self.assertEqual(response.status_code, 302)
-        portal = self.client.get("/parent/portal")
+        portal = parent_client.get("/parent/portal")
         self.assertEqual(portal.status_code, 200)
         self.assertIn(b"Linked Sample Learner", portal.data)
         self.assertIn(b"Mathematics", portal.data)
         self.assertNotIn(b"Unlinked Sample Learner", portal.data)
-        forbidden = self.client.get("/parent/portal?student_id=" + str(other))
+        forbidden = parent_client.get("/parent/portal?student_id=" + str(other))
         self.assertEqual(forbidden.status_code, 403)
 
     def test_security_headers_are_present(self):
