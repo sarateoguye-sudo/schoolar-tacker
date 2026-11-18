@@ -976,6 +976,8 @@ from parent_portal import register_parent_portal
 register_parent_portal(app, connect_db, csrf_field)
 
 init_db()
+from teacher_assignments import register_teacher_assignments
+register_teacher_assignments(app, connect_db, csrf_field)
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "5000")), debug=False)
