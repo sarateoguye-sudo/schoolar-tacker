@@ -139,6 +139,30 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         """)
+        # Migrate any earlier parent-account table shape without deleting its data.
+        # Legacy tables are retained for review; new portal queries use this schema.
+        parent_columns = {row["name"] for row in db.execute("PRAGMA table_info(parent_users)").fetchall()}
+        if parent_columns and not {"username", "parent_name", "password_hash", "active"}.issubset(parent_columns):
+            link_table_exists = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='parent_student_links'"
+            ).fetchone()
+            if link_table_exists:
+                db.execute("ALTER TABLE parent_student_links RENAME TO parent_student_links_legacy")
+            db.execute("ALTER TABLE parent_users RENAME TO parent_users_legacy")
+            db.execute("""CREATE TABLE parent_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                parent_name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )""")
+            db.execute("""CREATE TABLE parent_student_links (
+                parent_id INTEGER NOT NULL REFERENCES parent_users(id) ON DELETE CASCADE,
+                student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(parent_id, student_id)
+            )""")
         # Seed clearly labelled demo lessons only when the timetable is empty.
         # These entries make the demo teacher portal testable without pretending
         # to represent a real school's timetable.
