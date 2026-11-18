@@ -19,6 +19,8 @@ Keeping student records, attendance, lesson information, and school dates organi
 | ✅ Lesson attendance | Record students as present, absent, or late by date and subject. |
 | 📈 Attendance reports | Review attendance summaries across a selected date range. |
 | 🗓️ School calendar | Record and display important school dates and events. |
+| 👨‍👩‍👧 Parents' Portal | Parent accounts can view attendance only for children linked by a school administrator, plus upcoming school events. |
+| 🔐 Parent account management | Administrators create parent logins and link one or more students to each verified guardian account. |
 | 🔔 Parent notification log | Review demo notifications associated with student absences. |
 
 > **Please note:** Parent notifications are currently a demonstration log; live SMS, email, and push-notification delivery are not implemented.
@@ -95,13 +97,13 @@ Keeping student records, attendance, lesson information, and school dates organi
 
 ## Security and privacy notice
 
-Scholar Tracker is an educational prototype and **must not be used with real student or parent personal information yet**. The current version does not include authentication, role-based access control, production database configuration, or real notification delivery.
+Scholar Tracker is an educational prototype and **must not be used with real student or parent personal information yet**. The prototype now includes administrator, teacher, and parent login flows with role-specific page access, CSRF protections, and parent-to-student links. It still lacks production-grade identity verification, a parent password-reset workflow, a persistent managed production database setup, audit logging, and real notification delivery. These controls must be reviewed and tested before any real-school pilot.
 
-Before any real-school pilot, implement and test secure login, administrator/teacher/parent permissions, input validation, secure secret management, database backups, access logging, and appropriate data-protection safeguards. Configure a strong `SECRET_KEY` through an environment variable and review applicable Kenyan data-protection requirements. The included sample students are fictional.
+Before any real-school pilot, independently test secure login and parent-child verification, administrator/teacher/parent permissions, input validation, secure secret management, database backups, access logging, persistent database configuration, and appropriate data-protection safeguards. Configure a strong `SECRET_KEY` through an environment variable and review applicable Kenyan data-protection requirements. The included sample students are fictional.
 
 ## Project vision
 
-The goal is to keep developing Scholar Tracker into a practical, accessible tool for school administration and communication. Planned improvements may include secure user roles, a parent portal, real notifications, and stronger deployment and privacy controls. These are goals, not claims that the features are already available.
+The goal is to keep developing Scholar Tracker into a practical, accessible tool for school administration and communication. Further planned improvements include a parent password-reset workflow, production-ready identity verification, real notifications, and stronger deployment and privacy controls. The Parents' Portal is an early prototype and must be tested before use with real student data.
 
 ## Feedback and collaboration
 
