@@ -131,3 +131,10 @@ Security protections include administrator-only school-management routes, teache
 
 **Important limitations:** this is a single-school prototype, not yet a fully isolated multi-school subscription platform. Before onboarding multiple paying schools or entering real student data, add and test school-level data isolation, secure persistent database hosting and backups, account recovery, audit logging, and a professional security review. The in-memory rate-limit store is a starter default; configure a shared store through `RATELIMIT_STORAGE_URI` for multi-instance deployments.
 
+
+
+## Teacher-specific attendance assignments
+
+Administrators can open **/admin/teacher-assignments** to assign each named teacher a specific subject, class, and stream. Teachers can use **/teacher/assigned-registers** to view only their active assignments and record attendance for students in that assigned class and stream. The server verifies assignment ownership on every register request; changing an assignment ID in the URL does not grant access to another teacher's class.
+
+This is an educational prototype. Test with fictional student records first. Before real-school use, review deployment database persistence, backups, school-level tenant boundaries, audit logging, and applicable student-data privacy requirements.
