@@ -57,7 +57,7 @@ def register_parent_portal(app, connect_db, csrf_field):
         return wrapped
 
     def parent_page(title, body, **context):
-        body = re.sub(r'(<form\b[^>]*method="post"[^>]*>), r'\1{{ csrf_field() }}', body, flags=re.I)
+        body = re.sub(r'(<form\b[^>]*method="post"[^>]*>)', r'\1{{ csrf_field() }}', body, flags=re.I)
         shell = """
         <!doctype html><html lang="en"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
