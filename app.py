@@ -396,6 +396,7 @@ def admin_teachers():
     body = """
     <h1>Teacher accounts</h1>
     <p class="muted">Create named accounts for staff. Never share accounts between teachers.</p>
+    <p><a class="btn" href="{{url_for('admin_teacher_assignments')}}">Assign subjects, classes and streams</a></p>
     <section class="panel"><h2>Create teacher account</h2>
       <form method="post">
         <div class="field"><label>Username</label><input name="username" minlength="3" autocomplete="off" required></div>
@@ -606,7 +607,7 @@ def teacher_portal():
                              (teacher_name, weekday)).fetchall()
     body = """
     <div style="display:flex;justify-content:space-between;gap:14px;align-items:start;flex-wrap:wrap">
-      <div><h1>Teacher portal</h1><p class="muted">Welcome, {{teacher_name}}. Your assigned lessons and class registers are below.</p></div>
+      <div><h1>Teacher portal</h1><p class="muted">Welcome, {{teacher_name}}. Your assigned lessons and class registers are below.</p><p><a class="btn" href="{{url_for('assigned_registers')}}">Open my assigned classes and registers</a></p></div>
       <form method="post" action="{{url_for('teacher_logout')}}" style="margin:0"><button type="submit">Log out</button></form>
     </div>
     <section class="panel"><form method="get"><div class="field"><label>Teaching date</label><input type="date" name="lesson_date" value="{{chosen_date}}" required></div><button>View day</button></form></section>
