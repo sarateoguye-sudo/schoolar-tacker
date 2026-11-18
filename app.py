@@ -204,11 +204,11 @@ footer{margin-left:248px;text-align:left;color:#97a1b2;padding:20px 36px;border-
 <header><div><strong>School management</strong><br><span>Welcome to your Scholar Tracker workspace</span></div><div class="app-install-area"><button class="install-app" id="installAppButton" type="button" hidden>Install app</button><span class="app-install-status" id="appInstallStatus">Add to home screen from your browser menu</span><span>● Demo workspace · Sample data</span></div></header>
 <nav>
 {% if session.get('role') == 'admin' %}
-<a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('admin_teachers') }}">Teacher accounts</a><a href="{{ url_for('admin_parents') }}">Parent accounts</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a><form method="post" action="{{ url_for('admin_logout') }}"><button type="submit">Admin logout</button></form>
+<a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('students_page') }}">Students</a><a href="{{ url_for('attendance_page') }}">Lesson attendance</a><a href="{{ url_for('timetable_page') }}">Teachers timetable</a><a href="{{ url_for('admin_teachers') }}">Teacher accounts</a><a href="{{ url_for('admin_parents') }}">Parent accounts</a><a href="{{ url_for('reports') }}">Reports</a><a href="{{ url_for('calendar_page') }}">School calendar</a><a href="{{ url_for('notifications_page') }}">Parent notifications</a><form method="post" action="{{ url_for('admin_logout') }}">{{ csrf_field() }}<button type="submit">Admin logout</button></form>
 {% elif session.get('role') == 'teacher' %}
-<a href="{{ url_for('teacher_portal') }}">My lessons</a><form method="post" action="{{ url_for('teacher_logout') }}"><button type="submit">Teacher logout</button></form>
+<a href="{{ url_for('teacher_portal') }}">My lessons</a><form method="post" action="{{ url_for('teacher_logout') }}">{{ csrf_field() }}<button type="submit">Teacher logout</button></form>
 {% elif session.get('role') == 'parent' %}
-<a href="{{ url_for('parent_portal') }}">My children's portal</a><form method="post" action="{{ url_for('parent_logout') }}"><button type="submit">Parent logout</button></form>
+<a href="{{ url_for('parent_portal') }}">My children's portal</a><form method="post" action="{{ url_for('parent_logout') }}">{{ csrf_field() }}<button type="submit">Parent logout</button></form>
 {% else %}
 <a href="{{ url_for('admin_login') }}">Administrator login</a><a href="{{ url_for('teacher_login') }}">Teacher login</a><a href="{{ url_for('parent_login') }}">Parent login</a>
 {% endif %}
