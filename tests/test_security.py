@@ -66,6 +66,68 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"shared demo account is disabled", response.data)
 
+    def test_parent_portal_requires_parent_login(self):
+        response = self.client.get("/parent/portal")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/parent/login", response.headers["Location"])
+
+    def test_parent_only_sees_linked_student_attendance(self):
+        # Sign in as administrator and create two fictional students.
+        login_page = self.client.get("/admin/login")
+        token = csrf_token(login_page)
+        self.client.post(
+            "/admin/login",
+            data={"csrf_token": token, "username": "test-admin", "password": "test-only-password-12345"},
+        )
+        with scholar_app.connect_db() as db:
+            first = db.execute(
+                "INSERT INTO students(admission_no,full_name,class_name,stream) VALUES(?,?,?,?)",
+                ("PARENTTEST001", "Linked Sample Learner", "Form 1", "A"),
+            ).lastrowid
+            other = db.execute(
+                "INSERT INTO students(admission_no,full_name,class_name,stream) VALUES(?,?,?,?)",
+                ("PARENTTEST002", "Unlinked Sample Learner", "Form 1", "B"),
+            ).lastrowid
+            db.execute(
+                "INSERT INTO attendance(student_id,lesson_date,subject,status,marked_by) VALUES(?,?,?,?,?)",
+                (first, "2026-11-18", "Mathematics", "Present", "Demo Teacher"),
+            )
+            db.execute(
+                "INSERT INTO attendance(student_id,lesson_date,subject,status,marked_by) VALUES(?,?,?,?,?)",
+                (other, "2026-11-18", "Science", "Absent", "Demo Teacher"),
+            )
+            db.commit()
+        admin_page = self.client.get("/admin/parents")
+        token = csrf_token(admin_page)
+        response = self.client.post(
+            "/admin/parents",
+            data={
+                "csrf_token": token,
+                "parent_name": "Sample Guardian",
+                "username": "sample-guardian",
+                "password": "sample-guardian-password",
+                "student_id": str(first),
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Sample Guardian", response.data)
+        self.client.post("/admin/logout", data={"csrf_token": csrf_token(self.client.get("/"))})
+        parent_page = self.client.get("/parent/login")
+        token = csrf_token(parent_page)
+        response = self.client.post(
+            "/parent/login",
+            data={"csrf_token": token, "username": "sample-guardian", "password": "sample-guardian-password"},
+        )
+        self.assertEqual(response.status_code, 302)
+        portal = self.client.get("/parent/portal")
+        self.assertEqual(portal.status_code, 200)
+        self.assertIn(b"Linked Sample Learner", portal.data)
+        self.assertIn(b"Mathematics", portal.data)
+        self.assertNotIn(b"Unlinked Sample Learner", portal.data)
+        forbidden = self.client.get("/parent/portal?student_id=" + str(other))
+        self.assertEqual(forbidden.status_code, 403)
+
     def test_security_headers_are_present(self):
         response = self.client.get("/health")
         self.assertEqual(response.headers.get("X-Content-Type-Options"), "nosniff")
