@@ -142,7 +142,27 @@ def init_db():
             FOREIGN KEY (school_id) REFERENCES schools(id),
             FOREIGN KEY (created_by) REFERENCES users(id)
         );
-                CREATE TABLE IF NOT EXISTS seating_plans (
+                CREATE TABLE IF NOT EXISTS academic_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            school_id INTEGER NOT NULL,
+            student_id INTEGER NOT NULL,
+            class_id INTEGER NOT NULL,
+            subject_name TEXT NOT NULL,
+            assessment_name TEXT NOT NULL,
+            term TEXT NOT NULL,
+            academic_year TEXT NOT NULL,
+            score REAL NOT NULL CHECK (score >= 0),
+            max_score REAL NOT NULL CHECK (max_score > 0),
+            recorded_by INTEGER NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (school_id) REFERENCES schools(id),
+            FOREIGN KEY (student_id) REFERENCES students(id),
+            FOREIGN KEY (class_id) REFERENCES classes(id),
+            FOREIGN KEY (recorded_by) REFERENCES users(id),
+            UNIQUE (student_id, subject_name, assessment_name, term, academic_year)
+        );
+        CREATE INDEX IF NOT EXISTS idx_academic_results_student ON academic_results(school_id, student_id, academic_year, term);
+        CREATE TABLE IF NOT EXISTS seating_plans (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             school_id INTEGER NOT NULL,
             class_id INTEGER NOT NULL,
@@ -1167,6 +1187,125 @@ def attendance_reports():
     for row in records:
         if row["status"] in summary: summary[row["status"]] += 1
     return render_template("attendance_reports.html", user=g.user, records=records, summary=summary, start_date=start_date, end_date=end_date)
+
+
+@app.route("/academic-reports", methods=["GET", "POST"])
+@roles_required("administrator", "teacher")
+def academic_reports():
+    """Enter marks only for assignments within the user's permitted school/classes."""
+    db = get_db()
+    school_id = g.user["school_id"]
+    if school_id is None:
+        abort(403)
+    assignments_sql = """SELECT teacher_assignments.id, teacher_assignments.class_id,
+                                teacher_assignments.subject_name, classes.name AS class_name,
+                                classes.stream, users.full_name AS teacher_name
+                         FROM teacher_assignments
+                         JOIN classes ON classes.id = teacher_assignments.class_id
+                         JOIN users ON users.id = teacher_assignments.teacher_id
+                         WHERE teacher_assignments.school_id = ?"""
+    assignment_params = [school_id]
+    if g.user["role"] == "teacher":
+        assignments_sql += " AND teacher_assignments.teacher_id = ?"
+        assignment_params.append(g.user["id"])
+    assignments_sql += " ORDER BY classes.name, classes.stream, teacher_assignments.subject_name"
+    assignments = db.execute(assignments_sql, assignment_params).fetchall()
+    assignment_id_raw = request.values.get("assignment_id", "")
+    assignment = None
+    if assignment_id_raw:
+        if not assignment_id_raw.isdigit():
+            abort(400, description="Select a valid subject assignment.")
+        assignment = next((row for row in assignments if row["id"] == int(assignment_id_raw)), None)
+        if assignment is None:
+            abort(404)
+    if request.method == "POST":
+        if assignment is None:
+            abort(400, description="Select an assigned class and subject.")
+        assessment = request.form.get("assessment_name", "").strip()
+        term = request.form.get("term", "").strip()
+        academic_year = request.form.get("academic_year", "").strip()
+        max_score_raw = request.form.get("max_score", "").strip()
+        if not assessment or len(assessment) > 100 or term not in {"Term 1", "Term 2", "Term 3"} or not academic_year.isdigit() or len(academic_year) != 4:
+            flash("Enter an assessment name, a valid term, and a four-digit academic year.", "error")
+            return redirect(url_for("academic_reports", assignment_id=assignment["id"]))
+        try:
+            max_score = float(max_score_raw)
+            if not 0 < max_score <= 1000:
+                raise ValueError
+        except (TypeError, ValueError):
+            flash("Maximum marks must be greater than 0 and no more than 1,000.", "error")
+            return redirect(url_for("academic_reports", assignment_id=assignment["id"]))
+        students = db.execute(
+            "SELECT id FROM students WHERE school_id = ? AND class_id = ? AND is_active = 1",
+            (school_id, assignment["class_id"]),
+        ).fetchall()
+        results = []
+        for student in students:
+            raw = request.form.get("score_" + str(student["id"]), "").strip()
+            if raw == "":
+                continue
+            try:
+                score = float(raw)
+                if score < 0 or score > max_score:
+                    raise ValueError
+            except (TypeError, ValueError):
+                flash("Each entered mark must be a number between zero and the maximum marks. Nothing was saved.", "error")
+                return redirect(url_for("academic_reports", assignment_id=assignment["id"]))
+            results.append((school_id, student["id"], assignment["class_id"], assignment["subject_name"],
+                            assessment, term, academic_year, score, max_score, g.user["id"]))
+        if not results:
+            flash("Enter at least one student's mark before saving.", "error")
+            return redirect(url_for("academic_reports", assignment_id=assignment["id"]))
+        try:
+            db.executemany(
+                """INSERT INTO academic_results
+                   (school_id, student_id, class_id, subject_name, assessment_name, term, academic_year, score, max_score, recorded_by)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(student_id, subject_name, assessment_name, term, academic_year)
+                   DO UPDATE SET score=excluded.score, max_score=excluded.max_score,
+                                 recorded_by=excluded.recorded_by, updated_at=CURRENT_TIMESTAMP""",
+                results,
+            )
+            db.commit()
+            flash(f"Saved marks for {len(results)} student(s).", "success")
+        except sqlite3.IntegrityError:
+            db.rollback()
+            flash("Marks could not be saved. Check the student and class records.", "error")
+        return redirect(url_for("academic_reports", assignment_id=assignment["id"]))
+    students = []
+    if assignment:
+        students = db.execute(
+            """SELECT id, full_name, admission_number FROM students
+               WHERE school_id = ? AND class_id = ? AND is_active = 1 ORDER BY full_name""",
+            (school_id, assignment["class_id"]),
+        ).fetchall()
+    return render_template("academic_reports.html", user=g.user, assignments=assignments,
+                           assignment=assignment, students=students)
+
+
+@app.get("/parent/children/<int:student_id>/reports")
+@roles_required("parent")
+def parent_child_reports(student_id):
+    """Parents can read academic results only for a child linked to their account."""
+    db = get_db()
+    school_id = g.user["school_id"]
+    child = db.execute(
+        """SELECT students.id, students.full_name, students.admission_number
+           FROM student_guardians JOIN students ON students.id = student_guardians.student_id
+           WHERE student_guardians.parent_id = ? AND student_guardians.student_id = ?
+             AND student_guardians.school_id = ? AND students.school_id = ? AND students.is_active = 1""",
+        (g.user["id"], student_id, school_id, school_id),
+    ).fetchone()
+    if child is None:
+        abort(404)
+    records = db.execute(
+        """SELECT subject_name, assessment_name, term, academic_year, score, max_score, updated_at
+           FROM academic_results WHERE school_id = ? AND student_id = ?
+           ORDER BY academic_year DESC, term, subject_name, assessment_name""",
+        (school_id, student_id),
+    ).fetchall()
+    return render_template("parent_child_reports.html", user=g.user, child=child, records=records)
+
 
 @app.get("/notifications")
 @login_required
