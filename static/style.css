@@ -64,3 +64,11 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px
   footer { flex-direction: column; gap: 4px; }
   .status { font-size: 9px; }
 }
+
+.auth-form { display: grid; gap: 10px; width: min(100%, 480px); margin: 28px 0; }
+.auth-form label { margin-top: 8px; font-size: 14px; font-weight: 750; }
+.auth-form input { width: 100%; padding: 13px 14px; border: 1px solid #cbd4e4; border-radius: 9px; background: white; color: var(--ink); font: inherit; }
+.auth-form input:focus { outline: 3px solid #d9e4ff; border-color: var(--blue); }
+button.primary-button, button.secondary-button { border: 0; cursor: pointer; font: inherit; }
+.auth-form button { justify-self: start; margin-top: 12px; }
+.topbar form { margin: 0; }
