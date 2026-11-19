@@ -528,6 +528,7 @@ def teacher_attendance(assignment_id):
              ON attendance.student_id = students.id
             AND attendance.attendance_date = ?
             AND attendance.lesson_name = ?
+            AND attendance.class_id = students.class_id
            WHERE students.school_id = ? AND students.class_id = ? AND students.is_active = 1
            ORDER BY students.full_name""",
         (attendance_date, assignment["subject_name"], g.user["school_id"], assignment["class_id"]),
