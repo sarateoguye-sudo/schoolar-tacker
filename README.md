@@ -24,9 +24,13 @@ The full roadmap is in [docs/MASTER_REQUIREMENTS.md](docs/MASTER_REQUIREMENTS.md
 - Administrator-only school management page for classes, streams, student register and teacher directory
 - School-scoped database queries and checks that prevent assigning a student to another school's class
 - Input length checks, duplicate admission-number handling and parameterized SQL for school records
-- Automated tests for authentication, role restrictions and school record validation
+- Administrator-created subject assignments linking a teacher, class/stream and subject
+- Teacher dashboard that lists only the signed-in teacher's assignments
+- Attendance register restricted to the teacher's own assigned class and subject
+- Attendance statuses: Present, Absent, Late and Excused; all active students must receive a status before saving
+- Automated tests for authentication, role restrictions, school records, subject assignments and attendance boundaries
 
-**Not implemented yet:** password reset for forgotten passwords, multi-factor authentication, login throttling, full school-level data isolation across every operation, parent/child verification, teacher lesson assignments, real attendance workflows, edit/deactivate approval flows, audit logs, and production deployment hardening. Passing the starter tests does not mean the entire app is secure.
+**Not implemented yet:** password reset for forgotten passwords, multi-factor authentication, login throttling, full school-level data isolation across every operation, parent/child verification, attendance audit history and correction approvals, repeated-subject lesson periods, edit/deactivate approval flows, complete school data isolation across every operation, audit logs, and production deployment hardening. Passing the starter tests does not mean the entire app is secure.
 
 ## Requirements
 
@@ -87,7 +91,7 @@ The full roadmap is in [docs/MASTER_REQUIREMENTS.md](docs/MASTER_REQUIREMENTS.md
    flask --app app run
    ```
 
-7. Open http://127.0.0.1:5000 and select **Sign in**. Sign in with the administrator account, then open **Manage school records** to create classes/streams, add sample students, and create teacher accounts.
+7. Open http://127.0.0.1:5000 and select **Sign in**. Sign in with the administrator account, then open **Manage school records** to create classes/streams, add sample students, create teacher accounts, and assign subjects to teachers. A teacher can then sign in and open the assigned attendance register.
 
 For macOS/Linux, set the secret key with `export SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"` before running the Flask commands.
 
