@@ -371,5 +371,34 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(count, 0)
 
 
+    def test_admin_can_view_school_attendance_reports(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO classes (school_id, name, stream, academic_year) VALUES (1, 'Form 1', 'A', '2026')")
+            class_id = db.execute("SELECT id FROM classes WHERE school_id = 1 AND name = 'Form 1'").fetchone()["id"]
+            db.execute("INSERT INTO students (school_id, class_id, admission_number, full_name) VALUES (1, ?, 'RPT-001', 'Report Student')", (class_id,))
+            student_id = db.execute("SELECT id FROM students WHERE admission_number = 'RPT-001'").fetchone()["id"]
+            db.execute("INSERT INTO attendance (student_id, class_id, attendance_date, lesson_name, status, recorded_by) VALUES (?, ?, '2026-11-19', 'Daily register', 'absent', 2)", (student_id, class_id))
+            db.commit()
+        self.login("admin@example.test", "a-long-test-password")
+        response = self.client.get("/attendance/reports?start_date=2026-11-19&end_date=2026-11-19")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Report Student", response.data)
+        self.assertIn(b"Absent", response.data)
+
+    def test_attendance_reports_reject_reversed_date_range(self):
+        self.login("admin@example.test", "a-long-test-password")
+        response = self.client.get("/attendance/reports?start_date=2026-11-20&end_date=2026-11-19")
+        self.assertEqual(response.status_code, 400)
+
+    def test_student_cannot_view_attendance_reports(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (1, 'Sample Student User', 'student@example.test', 'student', ?)", (generate_password_hash("student-password-123"),))
+            db.commit()
+        self.login("student@example.test", "student-password-123")
+        self.assertEqual(self.client.get("/attendance/reports").status_code, 403)
+
+
 if __name__ == "__main__":
     unittest.main()
