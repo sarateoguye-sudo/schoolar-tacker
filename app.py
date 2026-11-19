@@ -105,6 +105,20 @@ def init_db():
             FOREIGN KEY (recorded_by) REFERENCES users(id),
             UNIQUE (student_id, attendance_date, lesson_name)
         );
+        CREATE TABLE IF NOT EXISTS student_guardians (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            school_id INTEGER NOT NULL,
+            student_id INTEGER NOT NULL,
+            parent_id INTEGER NOT NULL,
+            relationship TEXT NOT NULL DEFAULT 'Parent',
+            verified_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (school_id) REFERENCES schools(id),
+            FOREIGN KEY (student_id) REFERENCES students(id),
+            FOREIGN KEY (parent_id) REFERENCES users(id),
+            FOREIGN KEY (verified_by) REFERENCES users(id),
+            UNIQUE (student_id, parent_id)
+        );
         CREATE TABLE IF NOT EXISTS teacher_assignments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             school_id INTEGER NOT NULL,
@@ -319,7 +333,13 @@ def dashboard():
                ORDER BY classes.name, classes.stream, teacher_assignments.subject_name""",
             (g.user["id"], g.user["school_id"]),
         ).fetchall()
-    return render_template("dashboard.html", user=g.user, stats=stats, teacher_assignments=teacher_assignments)
+    parent_children = []
+    if g.user["role"] == "parent" and g.user["school_id"] is not None:
+        parent_children = db.execute(
+            """SELECT students.id, students.full_name, students.admission_number, classes.name AS class_name, classes.stream, student_guardians.relationship FROM student_guardians JOIN students ON students.id = student_guardians.student_id LEFT JOIN classes ON classes.id = students.class_id WHERE student_guardians.parent_id = ? AND student_guardians.school_id = ? ORDER BY students.full_name""",
+            (g.user["id"], g.user["school_id"]),
+        ).fetchall()
+    return render_template("dashboard.html", user=g.user, stats=stats, teacher_assignments=teacher_assignments, parent_children=parent_children)
 
 
 @app.get("/admin")
@@ -415,6 +435,41 @@ def school_data():
                     except sqlite3.IntegrityError:
                         db.rollback()
                         flash("That teacher already has this subject assigned to this class.", "error")
+        elif action == "create_parent":
+            full_name = request.form.get("parent_name", "").strip()
+            email = request.form.get("parent_email", "").strip().lower()
+            password = request.form.get("parent_password", "")
+            if not full_name or len(full_name) > 120 or not email or len(email) > 254 or "@" not in email:
+                flash("Enter a valid parent name and email address.", "error")
+            elif len(password) < 12:
+                flash("The temporary password must be at least 12 characters.", "error")
+            else:
+                try:
+                    db.execute("INSERT INTO users (school_id, full_name, email, role, password_hash, must_change_password) VALUES (?, ?, ?, 'parent', ?, 1)", (school_id, full_name, email, generate_password_hash(password)))
+                    db.commit()
+                    flash("Parent account created. The parent must change the temporary password at first sign-in.", "success")
+                except sqlite3.IntegrityError:
+                    db.rollback()
+                    flash("That email address is already registered.", "error")
+        elif action == "link_parent":
+            parent_id_raw = request.form.get("parent_id", "").strip()
+            student_id_raw = request.form.get("student_id", "").strip()
+            relationship = request.form.get("relationship", "Parent").strip()
+            if not parent_id_raw.isdigit() or not student_id_raw.isdigit() or relationship not in ("Parent", "Mother", "Father", "Guardian"):
+                flash("Choose a parent, student and valid relationship.", "error")
+            else:
+                parent = db.execute("SELECT id FROM users WHERE id = ? AND school_id = ? AND role = 'parent' AND is_active = 1", (int(parent_id_raw), school_id)).fetchone()
+                student = db.execute("SELECT id FROM students WHERE id = ? AND school_id = ? AND is_active = 1", (int(student_id_raw), school_id)).fetchone()
+                if parent is None or student is None:
+                    flash("The selected parent and student must both belong to your school.", "error")
+                else:
+                    try:
+                        db.execute("INSERT INTO student_guardians (school_id, student_id, parent_id, relationship, verified_by) VALUES (?, ?, ?, ?, ?)", (school_id, int(student_id_raw), int(parent_id_raw), relationship, g.user["id"]))
+                        db.commit()
+                        flash("Parent-child link created and recorded as administrator-verified.", "success")
+                    except sqlite3.IntegrityError:
+                        db.rollback()
+                        flash("This parent is already linked to that student.", "error")
         elif action == "create_teacher":
             full_name = request.form.get("teacher_name", "").strip()
             email = request.form.get("teacher_email", "").strip().lower()
@@ -454,6 +509,11 @@ def school_data():
         "SELECT id, full_name, email, is_active FROM users WHERE school_id = ? AND role = 'teacher' ORDER BY full_name",
         (school_id,),
     ).fetchall()
+    parents = db.execute("SELECT id, full_name, email FROM users WHERE school_id = ? AND role = 'parent' AND is_active = 1 ORDER BY full_name", (school_id,)).fetchall()
+    parent_links = db.execute(
+        """SELECT users.full_name AS parent_name, students.full_name AS student_name, students.admission_number, student_guardians.relationship FROM student_guardians JOIN users ON users.id = student_guardians.parent_id JOIN students ON students.id = student_guardians.student_id WHERE student_guardians.school_id = ? ORDER BY users.full_name, students.full_name""",
+        (school_id,),
+    ).fetchall()
     assignments = db.execute(
         """SELECT teacher_assignments.id, teacher_assignments.subject_name, users.full_name AS teacher_name,
                   classes.name AS class_name, classes.stream
@@ -465,7 +525,7 @@ def school_data():
         (school_id,),
     ).fetchall()
     school = db.execute("SELECT name, county FROM schools WHERE id = ?", (school_id,)).fetchone()
-    return render_template("school_data.html", user=g.user, school=school, classes=classes, students=students, teachers=teachers, assignments=assignments)
+    return render_template("school_data.html", user=g.user, school=school, classes=classes, students=students, teachers=teachers, assignments=assignments, parents=parents, parent_links=parent_links)
 
 
 @app.route("/teacher/attendance/<int:assignment_id>", methods=["GET", "POST"])
@@ -569,6 +629,24 @@ def attendance_reports():
     for row in records:
         if row["status"] in summary: summary[row["status"]] += 1
     return render_template("attendance_reports.html", user=g.user, records=records, summary=summary, start_date=start_date, end_date=end_date)
+
+@app.get("/parent/children/<int:student_id>/attendance")
+@roles_required("parent")
+def parent_child_attendance(student_id):
+    """Only show attendance for a child linked to this signed-in parent."""
+    db = get_db()
+    link = db.execute(
+        """SELECT students.id, students.full_name, students.admission_number FROM student_guardians JOIN students ON students.id = student_guardians.student_id WHERE student_guardians.parent_id = ? AND student_guardians.student_id = ? AND student_guardians.school_id = ? AND students.school_id = ? AND students.is_active = 1""",
+        (g.user["id"], student_id, g.user["school_id"], g.user["school_id"]),
+    ).fetchone()
+    if link is None:
+        abort(404)
+    records = db.execute(
+        """SELECT attendance.attendance_date, attendance.lesson_name, attendance.status, classes.name AS class_name, classes.stream FROM attendance JOIN classes ON classes.id = attendance.class_id WHERE attendance.student_id = ? ORDER BY attendance.attendance_date DESC LIMIT 200""",
+        (student_id,),
+    ).fetchall()
+    return render_template("parent_child_attendance.html", user=g.user, child=link, records=records)
+
 
 @app.route("/change-password", methods=["GET", "POST"])
 @login_required
