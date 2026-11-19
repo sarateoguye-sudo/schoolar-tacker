@@ -483,5 +483,92 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(linked["verified_by"], 1)
 
 
+
+    def test_absence_notification_is_private_deduplicated_and_corrected(self):
+        class_id, assignment_id = self.create_assignment_fixture()
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute(
+                "INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (1, 'Attendance Parent', 'absence-parent@example.test', 'parent', ?)",
+                (generate_password_hash("parent-long-password-123"),),
+            )
+            parent_id = db.execute("SELECT id FROM users WHERE email = 'absence-parent@example.test'").fetchone()["id"]
+            student_id = db.execute("SELECT id FROM students WHERE admission_number = 'ATT-001'").fetchone()["id"]
+            db.execute(
+                "INSERT INTO student_guardians (school_id, student_id, parent_id, relationship, verified_by) VALUES (1, ?, ?, 'Guardian', 1)",
+                (student_id, parent_id),
+            )
+            db.commit()
+
+        with self.client.session_transaction() as session:
+            logout_token = session["_csrf_token"]
+        self.client.post("/logout", data={"_csrf_token": logout_token})
+        self.login("teacher@example.test", "another-long-test-password")
+
+        def submit_status(status):
+            self.client.get("/dashboard")
+            with self.client.session_transaction() as session:
+                token = session["_csrf_token"]
+            return self.client.post(
+                f"/teacher/attendance/{assignment_id}",
+                data={"_csrf_token": token, "attendance_date": "2026-11-19", "status_1": status},
+                follow_redirects=True,
+            )
+
+        response = submit_status("absent")
+        self.assertIn(b"notified", response.data)
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            rows = db.execute(
+                "SELECT id, user_id, title, message, is_read FROM notifications WHERE user_id = ?",
+                (parent_id,),
+            ).fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertIn("marked absent", rows[0]["message"])
+
+        submit_status("absent")
+        with scholar_app.app.app_context():
+            count = scholar_app.get_db().execute(
+                "SELECT COUNT(*) FROM notifications WHERE user_id = ?", (parent_id,)
+            ).fetchone()[0]
+        self.assertEqual(count, 1, "Repeated submission must not create duplicate notifications.")
+
+        submit_status("present")
+        with scholar_app.app.app_context():
+            row = scholar_app.get_db().execute(
+                "SELECT title, message, is_read FROM notifications WHERE user_id = ?", (parent_id,)
+            ).fetchone()
+        self.assertEqual(row["title"], "Attendance record updated")
+        self.assertIn("updated to Present", row["message"])
+        self.assertEqual(row["is_read"], 1)
+
+        with self.client.session_transaction() as session:
+            logout_token = session["_csrf_token"]
+        self.client.post("/logout", data={"_csrf_token": logout_token})
+        self.login("absence-parent@example.test", "parent-long-password-123")
+        inbox = self.client.get("/notifications")
+        self.assertEqual(inbox.status_code, 200)
+        self.assertIn(b"Attendance record updated", inbox.data)
+        self.assertIn(b"updated to Present", inbox.data)
+
+    def test_user_cannot_mark_another_users_notification_read(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute(
+                """INSERT INTO notifications (user_id, school_id, notification_type, title, message)
+                   VALUES (1, 1, 'test', 'Private notice', 'Admin-only notice')"""
+            )
+            db.commit()
+            notification_id = db.execute("SELECT id FROM notifications WHERE title = 'Private notice'").fetchone()["id"]
+        self.login("teacher@example.test", "another-long-test-password")
+        self.client.get("/dashboard")
+        with self.client.session_transaction() as session:
+            token = session["_csrf_token"]
+        response = self.client.post(
+            f"/notifications/{notification_id}/read",
+            data={"_csrf_token": token},
+        )
+        self.assertEqual(response.status_code, 404)
+
 if __name__ == "__main__":
     unittest.main()
