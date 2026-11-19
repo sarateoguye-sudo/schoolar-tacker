@@ -32,9 +32,12 @@ The full roadmap is in [docs/MASTER_REQUIREMENTS.md](docs/MASTER_REQUIREMENTS.md
 - Administrator-created parent accounts with forced temporary-password changes
 - Administrator-controlled parent-to-student links, scoped to one school
 - Parent dashboard lists only linked children; parent attendance view is read-only and checks the parent-child link on the server
+- In-app absence alerts for linked parents when attendance is saved; repeat submissions update the same alert instead of creating duplicates
+- A private notification inbox with mark-as-read controls and per-user server-side access checks
+- Administrator dashboard warning for students marked absent on at least three distinct days in the last 30 days
 - Automated tests for authentication, role restrictions, school records, subject assignments, attendance boundaries and parent access boundaries
 
-**Not implemented yet:** password reset for forgotten passwords, multi-factor authentication, login throttling, independent verification documents/workflow for parent identity, attendance audit history and correction approvals, repeated-subject lesson periods, edit/deactivate approval flows, comprehensive school data isolation across every operation, full audit logs, and production deployment hardening. The parent-child link is currently marked verified when a school administrator creates it; schools must follow their own identity-check process before linking accounts. Tests have been added but must be run in a configured environment. Passing starter tests does not mean the entire app is secure.
+**Not implemented yet:** password reset for forgotten passwords, multi-factor authentication, login throttling, independent verification documents/workflow for parent identity, attendance audit history and correction approvals, repeated-subject lesson periods, edit/deactivate approval flows, comprehensive school data isolation across every operation, full audit logs, SMS/email delivery integration, and production deployment hardening. The parent-child link is currently marked verified when a school administrator creates it; schools must follow their own identity-check process before linking accounts. Tests have been added but must be run in a configured environment. Passing starter tests does not mean the entire app is secure.
 
 ## Requirements
 
