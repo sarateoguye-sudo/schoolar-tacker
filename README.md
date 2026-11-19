@@ -2,11 +2,15 @@
 
 **Smarter school management. Stronger school–home connections.**
 
-Scholar Tracker is a school management project being built for schools in Kenya. It aims to help authorised school staff manage student records, lesson attendance, school dates, seating arrangements, and parent communication.
+Scholar Tracker is a school management project being built for schools in Kenya. It aims to help authorised school staff manage student records, lesson attendance, school dates, seating arrangements, teacher timetables, and parent communication.
 
 > **Project status:** Early rebuild foundation. This version is not ready for real student data or production school deployment. Login, role permissions, parent verification, and security tests must be completed before use with real records.
 
-## First milestone
+## Complete project plan
+
+The full requirements list is maintained in **[docs/MASTER_REQUIREMENTS.md](docs/MASTER_REQUIREMENTS.md)**. It covers school management, user accounts, parent portal, attendance, reports, calendar, notifications, dashboards, seating plans, class directors, teacher directory, staff timetables, security, accessibility, and truancy prevention.
+
+## First milestone currently in the repository
 
 - Flask application foundation
 - SQLite database initialisation
@@ -14,16 +18,18 @@ Scholar Tracker is a school management project being built for schools in Kenya.
 - Basic project dashboard
 - Health-check endpoint
 
+These are foundation components only. The full requirements document is a roadmap; it does not mean every feature has been implemented.
+
 ## Planned development order
 
-1. Authentication, account recovery, and server-side role permissions
-2. School setup, classes, streams, and student register
-3. Teacher assignments and lesson attendance
-4. Parent portal and verified guardian links
-5. Reports and truancy insights
-6. School calendar, staff timetable, and notifications
-7. Seating plans and class directors
-8. Security testing, backups, accessibility, and deployment
+1. Foundation and security: authentication, roles, backend permissions, school data isolation
+2. School setup: classes, streams, students and teacher directory
+3. Attendance: lesson registers, corrections, audit history and reports
+4. Parent portal: verified guardian links and child-specific access
+5. Calendar, teacher timetables and notifications
+6. Seating plans, class directors and approval workflows
+7. Academic reports, attendance trends and truancy prevention
+8. Security testing, backups, privacy review, accessibility and deployment
 
 ## Requirements
 
@@ -40,7 +46,7 @@ Scholar Tracker is a school management project being built for schools in Kenya.
    git switch scholar-tracker-rebuild
    ```
 
-2. Create and activate a virtual environment:
+2. Create and activate a virtual environment.
 
    **Windows**
    ```powershell
@@ -71,15 +77,21 @@ Scholar Tracker is a school management project being built for schools in Kenya.
 
 ## Database
 
-The default local database is `scholar_tracker.db`. It is created in the project folder when initialisation is run. Do not commit database files or real student records to GitHub.
+The default local database is `scholar_tracker.db`. It is created when initialisation runs. Do not commit database files or real student records to GitHub.
 
 ## Security rules
 
 - Never commit passwords, API keys, private student records, or production database files.
-- Do not use this prototype with real student data until authentication, authorisation, input validation, audit logging, and backups are implemented and tested.
+- Do not use this prototype with real student data until authentication, authorization, input validation, audit logging, and backups are implemented and tested.
 - Keep Flask debug mode off outside local development.
-- Use HTTPS and a managed production database before public deployment.
+- Use HTTPS and an appropriate production database before public deployment.
+- Verify role permissions on the server for every protected operation.
+
+## Definition of done
+
+Track each feature as **Not Started**, **In Progress**, **Implemented**, or **Tested**. A page existing is not proof that its workflow or permissions work. Test normal use, invalid input, permission boundaries, and failure cases before marking a feature tested.
 
 ## Project links
 
-- Repository: https://github.com/sarateoguye-sudo/schoolar-tacker
+- [Repository](https://github.com/sarateoguye-sudo/schoolar-tacker)
+- [Complete master requirements](docs/MASTER_REQUIREMENTS.md)
