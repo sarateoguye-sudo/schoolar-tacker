@@ -2,34 +2,27 @@
 
 **Smarter school management. Stronger school–home connections.**
 
-Scholar Tracker is a school management project being built for schools in Kenya. It aims to help authorised school staff manage student records, lesson attendance, school dates, seating arrangements, teacher timetables, and parent communication.
+Scholar Tracker is a school management project being built for schools in Kenya. Its goals include attendance, student records, school calendars, seating plans, teacher timetables, parent communication, and truancy prevention.
 
-> **Project status:** Early rebuild foundation. This version is not ready for real student data or production school deployment. Login, role permissions, parent verification, and security tests must be completed before use with real records.
+> **Current status:** Early prototype. Basic sign-in, password hashing, CSRF form tokens, session settings, and an administrator-only example route have been added. This is not production-ready and must not be used for real student records yet.
 
-## Complete project plan
+## Project plan
 
-The full requirements list is maintained in **[docs/MASTER_REQUIREMENTS.md](docs/MASTER_REQUIREMENTS.md)**. It covers school management, user accounts, parent portal, attendance, reports, calendar, notifications, dashboards, seating plans, class directors, teacher directory, staff timetables, security, accessibility, and truancy prevention.
+The full roadmap is in [docs/MASTER_REQUIREMENTS.md](docs/MASTER_REQUIREMENTS.md). It includes school management, parent portal, attendance, reports, calendar, notifications, dashboards, seating plans, class directors, teacher timetables, security, accessibility, and truancy prevention.
 
-## First milestone currently in the repository
+## Implemented in this milestone
 
-- Flask application foundation
-- SQLite database initialisation
-- Initial tables for schools, users, classes/streams, students, attendance, and school events
-- Basic project dashboard
-- Health-check endpoint
+- Flask app and SQLite database initialisation
+- Starter database tables for schools, users, classes/streams, students, attendance, and school events
+- Sign-in and sign-out routes
+- Password hashes using Werkzeug security helpers (plain-text passwords are not stored)
+- CSRF token check for POST forms
+- Session cookie settings and baseline response security headers
+- Server-side login checks and an administrator-only example route
+- CLI commands for creating a school and a user
+- Basic automated tests for login and role restrictions
 
-These are foundation components only. The full requirements document is a roadmap; it does not mean every feature has been implemented.
-
-## Planned development order
-
-1. Foundation and security: authentication, roles, backend permissions, school data isolation
-2. School setup: classes, streams, students and teacher directory
-3. Attendance: lesson registers, corrections, audit history and reports
-4. Parent portal: verified guardian links and child-specific access
-5. Calendar, teacher timetables and notifications
-6. Seating plans, class directors and approval workflows
-7. Academic reports, attendance trends and truancy prevention
-8. Security testing, backups, privacy review, accessibility and deployment
+**Not implemented yet:** password reset, multi-factor authentication, login throttling, full school-level data isolation across every operation, parent/child verification, real attendance workflows, audit logs, and production deployment hardening. Passing the starter tests does not mean the entire app is secure.
 
 ## Requirements
 
@@ -48,7 +41,7 @@ These are foundation components only. The full requirements document is a roadma
 
 2. Create and activate a virtual environment.
 
-   **Windows**
+   **Windows PowerShell**
    ```powershell
    py -m venv .venv
    .venv\Scripts\Activate.ps1
@@ -66,32 +59,63 @@ These are foundation components only. The full requirements document is a roadma
    pip install -r requirements.txt
    ```
 
-4. Initialise the local database and start the app:
+4. Set a stable local secret key, initialise the database, and create a school. In PowerShell:
 
-   ```bash
+   ```powershell
+   $env:SECRET_KEY = python -c "import secrets; print(secrets.token_hex(32))"
    flask --app app init-db
+   flask --app app create-school
+   ```
+
+   In the create-school prompt, enter the school name and county. Keep the generated secret key private; do not commit it to GitHub. For a real deployment, use a secure secret manager and HTTPS.
+
+5. Create the first administrator account. Use the school ID printed by the create-school command:
+
+   ```powershell
+   flask --app app create-user
+   ```
+
+   Enter the administrator's name, email, role `administrator`, school ID, and a password of at least 12 characters when prompted. The password is hashed before storage. Do not put passwords directly in command history or source files.
+
+6. Start the local app:
+
+   ```powershell
    flask --app app run
    ```
 
-5. Open http://127.0.0.1:5000 in your browser.
+7. Open http://127.0.0.1:5000 and select **Sign in**.
 
-## Database
+For macOS/Linux, set the secret key with `export SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"` before running the Flask commands.
 
-The default local database is `scholar_tracker.db`. It is created when initialisation runs. Do not commit database files or real student records to GitHub.
+## Run the automated tests
+
+After installing dependencies, run:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The tests use a temporary database and sample accounts; they do not need real school data.
+
+## Database and privacy
+
+The default database is `scholar_tracker.db`. Do not commit database files or real student records to GitHub. Use sample data only while developing.
 
 ## Security rules
 
-- Never commit passwords, API keys, private student records, or production database files.
-- Do not use this prototype with real student data until authentication, authorization, input validation, audit logging, and backups are implemented and tested.
-- Keep Flask debug mode off outside local development.
+- Never commit passwords, secret keys, API keys, private student records, or production database files.
+- Do not use this prototype with real student data until authentication, authorisation, school data isolation, input validation, audit logging, backups, and privacy controls are implemented and independently tested.
+- Keep debug mode off outside local development.
 - Use HTTPS and an appropriate production database before public deployment.
-- Verify role permissions on the server for every protected operation.
+- Check permissions on the server for every protected action. Hiding a button is not access control.
+- The temporary random secret key used when `SECRET_KEY` is missing is suitable only for local experiments; set a stable secret key for local use.
 
 ## Definition of done
 
-Track each feature as **Not Started**, **In Progress**, **Implemented**, or **Tested**. A page existing is not proof that its workflow or permissions work. Test normal use, invalid input, permission boundaries, and failure cases before marking a feature tested.
+Track each feature as **Not Started**, **In Progress**, **Implemented**, or **Tested**. A page existing is not proof that its workflow or permissions work. Test normal use, invalid input, role boundaries, school data boundaries, and failure cases before marking a feature tested.
 
 ## Project links
 
 - [Repository](https://github.com/sarateoguye-sudo/schoolar-tacker)
+- [Rebuild branch](https://github.com/sarateoguye-sudo/schoolar-tacker/tree/scholar-tracker-rebuild)
 - [Complete master requirements](docs/MASTER_REQUIREMENTS.md)
