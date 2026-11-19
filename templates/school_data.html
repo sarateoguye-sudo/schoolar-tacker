@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>School Data | Scholar Tracker</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body>
+<header class="topbar"><a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark">ST</span><span>Scholar Tracker</span></a><a class="secondary-button" href="{{ url_for('dashboard') }}">Dashboard</a></header>
+<main class="container">
+<section class="hero"><p class="eyebrow">SCHOOL SETUP</p><h1>{{ school['name'] }} <span>records</span></h1><p class="intro">Manage classes, streams, student records and teacher directory for your assigned school only.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<p class="notice" role="status">{{ message }}</p>{% endfor %}{% endwith %}
+<p class="notice"><strong>Prototype warning:</strong> Use sample data only. Student records, account recovery, detailed audit logs and full privacy controls are still under development.</p>
+</section>
+<section class="management-grid">
+<article class="module-card"><h2>Create class / stream</h2>
+<form method="post" class="auth-form">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="create_class">
+<label for="class_name">Class name</label><input id="class_name" name="class_name" placeholder="e.g. Form 1" maxlength="80" required>
+<label for="stream">Stream</label><input id="stream" name="stream" placeholder="e.g. East" maxlength="40">
+<label for="academic_year">Academic year</label><input id="academic_year" name="academic_year" placeholder="e.g. 2026" maxlength="20">
+<button class="primary-button" type="submit">Create class</button></form></article>
+<article class="module-card"><h2>Register student</h2>
+<form method="post" class="auth-form">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="create_student">
+<label for="student_name">Student full name</label><input id="student_name" name="student_name" maxlength="120" required>
+<label for="admission_number">Admission number</label><input id="admission_number" name="admission_number" maxlength="40" required>
+<label for="class_id">Class / stream</label><select id="class_id" name="class_id"><option value="">Not assigned yet</option>{% for item in classes %}<option value="{{ item['id'] }}">{{ item['name'] }}{% if item['stream'] %} - {{ item['stream'] }}{% endif %}{% if item['academic_year'] %} ({{ item['academic_year'] }}){% endif %}</option>{% endfor %}</select>
+<button class="primary-button" type="submit">Register student</button></form></article>
+<article class="module-card"><h2>Add teacher account</h2>
+<form method="post" class="auth-form">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="create_teacher">
+<label for="teacher_name">Teacher full name</label><input id="teacher_name" name="teacher_name" maxlength="120" required>
+<label for="teacher_email">Teacher email</label><input id="teacher_email" name="teacher_email" type="email" maxlength="254" required>
+<label for="teacher_password">Temporary password (12+ characters)</label><input id="teacher_password" name="teacher_password" type="password" minlength="12" autocomplete="new-password" required>
+<button class="primary-button" type="submit">Create teacher</button></form><p class="muted-small">Use a unique temporary password and share it privately. Password-change support is a required next security improvement.</p></article>
+</section>
+<section class="modules">
+<div class="section-heading"><p class="eyebrow">CURRENT SCHOOL ONLY</p><h2>Classes and streams</h2></div>
+{% if classes %}<div class="table-wrap"><table><thead><tr><th>Class</th><th>Stream</th><th>Academic year</th></tr></thead><tbody>{% for item in classes %}<tr><td>{{ item['name'] }}</td><td>{{ item['stream'] or '—' }}</td><td>{{ item['academic_year'] or '—' }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p>No classes created yet.</p>{% endif %}
+<div class="section-heading"><p class="eyebrow">STUDENT REGISTER</p><h2>Students</h2></div>
+{% if students %}<div class="table-wrap"><table><thead><tr><th>Name</th><th>Admission number</th><th>Class</th><th>Stream</th></tr></thead><tbody>{% for item in students %}<tr><td>{{ item['full_name'] }}</td><td>{{ item['admission_number'] }}</td><td>{{ item['class_name'] or 'Not assigned' }}</td><td>{{ item['stream'] or '—' }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p>No student records created yet.</p>{% endif %}
+<div class="section-heading"><p class="eyebrow">STAFF DIRECTORY</p><h2>Teachers</h2></div>
+{% if teachers %}<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Account status</th></tr></thead><tbody>{% for item in teachers %}<tr><td>{{ item['full_name'] }}</td><td>{{ item['email'] }}</td><td>{{ 'Active' if item['is_active'] else 'Inactive' }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p>No teacher accounts created yet.</p>{% endif %}
+</section></main><footer><span>Scholar Tracker</span><span>Development version • Sample data only</span></footer>
+</body></html>
