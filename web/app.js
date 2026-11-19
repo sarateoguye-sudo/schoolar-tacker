@@ -49,7 +49,6 @@ function renderDashboard(){
   const counts=markedCounts(today());$("statPresent").textContent=counts.present;$("statAbsent").textContent=counts.absent;
   $("presentSub").textContent=counts.unmarked?counts.unmarked+" not marked yet":"All students marked";
   const recent=data.students.slice(0,5);
-  $("dashboardAttendance")= $("dashboardAttendance");
   $("dashboardAttendance").innerHTML=recent.length?recent.map(s=>'<div class="mini-row"><div class="student-avatar">'+esc(initials(s.name))+'</div><div class="mini-info"><strong>'+esc(s.name)+'</strong><small>'+esc(s.adm)+' · '+esc(classLabel(getClass(s.classId)))+'</small></div>'+statusBadge(statusFor(today(),s.id))+'</div>').join(""):'<div class="empty-state">Add students to get started.</div>';
 }
 function statusBadge(status){const cls=status==="Present"?"present":status==="Absent"?"absent":"unmarked";return '<span class="status '+cls+'">'+esc(status)+'</span>';}
