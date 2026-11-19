@@ -105,6 +105,18 @@ def init_db():
             FOREIGN KEY (recorded_by) REFERENCES users(id),
             UNIQUE (student_id, attendance_date, lesson_name)
         );
+        CREATE TABLE IF NOT EXISTS teacher_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            school_id INTEGER NOT NULL,
+            teacher_id INTEGER NOT NULL,
+            class_id INTEGER NOT NULL,
+            subject_name TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (school_id) REFERENCES schools(id),
+            FOREIGN KEY (teacher_id) REFERENCES users(id),
+            FOREIGN KEY (class_id) REFERENCES classes(id),
+            UNIQUE (teacher_id, class_id, subject_name)
+        );
         CREATE TABLE IF NOT EXISTS school_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             school_id INTEGER NOT NULL,
@@ -366,6 +378,34 @@ def school_data():
                 except sqlite3.IntegrityError:
                     db.rollback()
                     flash("That admission number is already used in your school.", "error")
+        elif action == "assign_subject":
+            teacher_id_raw = request.form.get("teacher_id", "").strip()
+            class_id_raw = request.form.get("class_id", "").strip()
+            subject_name = request.form.get("subject_name", "").strip()
+            if not teacher_id_raw.isdigit() or not class_id_raw.isdigit() or not subject_name or len(subject_name) > 100:
+                flash("Choose a teacher and class, and enter a subject name of up to 100 characters.", "error")
+            else:
+                teacher = db.execute(
+                    "SELECT id FROM users WHERE id = ? AND school_id = ? AND role = 'teacher' AND is_active = 1",
+                    (int(teacher_id_raw), school_id),
+                ).fetchone()
+                class_row = db.execute(
+                    "SELECT id FROM classes WHERE id = ? AND school_id = ?",
+                    (int(class_id_raw), school_id),
+                ).fetchone()
+                if teacher is None or class_row is None:
+                    flash("The selected teacher or class is not part of your school.", "error")
+                else:
+                    try:
+                        db.execute(
+                            "INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_name) VALUES (?, ?, ?, ?)",
+                            (school_id, int(teacher_id_raw), int(class_id_raw), subject_name),
+                        )
+                        db.commit()
+                        flash("Subject assignment created.", "success")
+                    except sqlite3.IntegrityError:
+                        db.rollback()
+                        flash("That teacher already has this subject assigned to this class.", "error")
         elif action == "create_teacher":
             full_name = request.form.get("teacher_name", "").strip()
             email = request.form.get("teacher_email", "").strip().lower()
@@ -405,8 +445,85 @@ def school_data():
         "SELECT id, full_name, email, is_active FROM users WHERE school_id = ? AND role = 'teacher' ORDER BY full_name",
         (school_id,),
     ).fetchall()
+    assignments = db.execute(
+        """SELECT teacher_assignments.id, teacher_assignments.subject_name, users.full_name AS teacher_name,
+                  classes.name AS class_name, classes.stream
+           FROM teacher_assignments
+           JOIN users ON users.id = teacher_assignments.teacher_id
+           JOIN classes ON classes.id = teacher_assignments.class_id
+           WHERE teacher_assignments.school_id = ?
+           ORDER BY classes.name, classes.stream, users.full_name, teacher_assignments.subject_name""",
+        (school_id,),
+    ).fetchall()
     school = db.execute("SELECT name, county FROM schools WHERE id = ?", (school_id,)).fetchone()
-    return render_template("school_data.html", user=g.user, school=school, classes=classes, students=students, teachers=teachers)
+    return render_template("school_data.html", user=g.user, school=school, classes=classes, students=students, teachers=teachers, assignments=assignments)
+
+
+@app.route("/teacher/attendance/<int:assignment_id>", methods=["GET", "POST"])
+@roles_required("teacher")
+def teacher_attendance(assignment_id):
+    """Let a teacher mark attendance only for an assigned class and subject."""
+    db = get_db()
+    assignment = db.execute(
+        """SELECT teacher_assignments.id, teacher_assignments.school_id, teacher_assignments.teacher_id,
+                  teacher_assignments.class_id, teacher_assignments.subject_name, classes.name AS class_name,
+                  classes.stream
+           FROM teacher_assignments
+           JOIN classes ON classes.id = teacher_assignments.class_id
+           WHERE teacher_assignments.id = ? AND teacher_assignments.teacher_id = ?
+             AND teacher_assignments.school_id = ?""",
+        (assignment_id, g.user["id"], g.user["school_id"]),
+    ).fetchone()
+    if assignment is None:
+        abort(404)
+    from datetime import date
+    attendance_date = request.values.get("attendance_date", date.today().isoformat())
+    try:
+        date.fromisoformat(attendance_date)
+    except (TypeError, ValueError):
+        abort(400, description="Use a valid date in YYYY-MM-DD format.")
+    if request.method == "POST":
+        students = db.execute(
+            "SELECT id FROM students WHERE school_id = ? AND class_id = ? AND is_active = 1",
+            (g.user["school_id"], assignment["class_id"]),
+        ).fetchall()
+        if not students:
+            flash("This class has no active students to mark.", "error")
+            return redirect(url_for("teacher_attendance", assignment_id=assignment_id, attendance_date=attendance_date))
+        allowed_statuses = {"present", "absent", "late", "excused"}
+        records = []
+        for student in students:
+            status = request.form.get("status_" + str(student["id"]), "")
+            if status not in allowed_statuses:
+                flash("Select an attendance status for every student before submitting.", "error")
+                return redirect(url_for("teacher_attendance", assignment_id=assignment_id, attendance_date=attendance_date))
+            records.append((student["id"], assignment["class_id"], attendance_date,
+                            assignment["subject_name"], status, g.user["id"]))
+        try:
+            db.executemany(
+                """INSERT INTO attendance (student_id, class_id, attendance_date, lesson_name, status, recorded_by)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(student_id, attendance_date, lesson_name)
+                   DO UPDATE SET status = excluded.status, recorded_by = excluded.recorded_by""",
+                records,
+            )
+            db.commit()
+            flash("Attendance saved for the assigned subject and class.", "success")
+        except sqlite3.IntegrityError:
+            db.rollback()
+            flash("Attendance could not be saved. Check the class records and try again.", "error")
+        return redirect(url_for("teacher_attendance", assignment_id=assignment_id, attendance_date=attendance_date))
+    students = db.execute(
+        """SELECT students.id, students.full_name, students.admission_number, attendance.status
+           FROM students LEFT JOIN attendance
+             ON attendance.student_id = students.id
+            AND attendance.attendance_date = ?
+            AND attendance.lesson_name = ?
+           WHERE students.school_id = ? AND students.class_id = ? AND students.is_active = 1
+           ORDER BY students.full_name""",
+        (attendance_date, assignment["subject_name"], g.user["school_id"], assignment["class_id"]),
+    ).fetchall()
+    return render_template("attendance_register.html", assignment=assignment, students=students, attendance_date=attendance_date)
 
 
 @app.route("/change-password", methods=["GET", "POST"])
