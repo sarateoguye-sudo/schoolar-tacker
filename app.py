@@ -160,8 +160,33 @@ def init_db():
             UNIQUE (user_id, student_id, attendance_date, lesson_name, notification_type)
         );
         CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read, created_at);
+        CREATE TABLE IF NOT EXISTS timetable_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            school_id INTEGER NOT NULL,
+            assignment_id INTEGER NOT NULL,
+            weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            room TEXT NOT NULL DEFAULT '',
+            created_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (school_id) REFERENCES schools(id),
+            FOREIGN KEY (assignment_id) REFERENCES teacher_assignments(id),
+            FOREIGN KEY (created_by) REFERENCES users(id),
+            UNIQUE (assignment_id, weekday, start_time, end_time)
+        );
+        CREATE INDEX IF NOT EXISTS idx_timetable_school_day ON timetable_entries(school_id, weekday, start_time);
         """
     )
+    event_columns = {row[1] for row in db.execute("PRAGMA table_info(school_events)")}
+    for column, definition in (
+        ("event_type", "TEXT NOT NULL DEFAULT 'School event'"),
+        ("start_time", "TEXT"),
+        ("end_time", "TEXT"),
+        ("audience", "TEXT NOT NULL DEFAULT 'Everyone'"),
+    ):
+        if column not in event_columns:
+            db.execute(f"ALTER TABLE school_events ADD COLUMN {column} {definition}")
     user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
     if "must_change_password" not in user_columns:
         db.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
@@ -376,6 +401,162 @@ def dashboard():
         (g.user["id"],),
     ).fetchone()[0]
     return render_template("dashboard.html", user=g.user, stats=stats, teacher_assignments=teacher_assignments, parent_children=parent_children, repeated_absences=repeated_absences, unread_notifications=unread_notifications)
+
+
+@app.route("/school-calendar", methods=["GET", "POST"])
+@login_required
+def school_calendar():
+    """School-wide calendar; only administrators can publish events."""
+    if g.user["school_id"] is None:
+        abort(403)
+    db = get_db()
+    if request.method == "POST":
+        if g.user["role"] != "administrator":
+            abort(403)
+        title = request.form.get("title", "").strip()
+        description = request.form.get("description", "").strip()
+        event_date = request.form.get("event_date", "").strip()
+        event_type = request.form.get("event_type", "School event").strip()
+        start_time = request.form.get("start_time", "").strip() or None
+        end_time = request.form.get("end_time", "").strip() or None
+        audience = request.form.get("audience", "Everyone").strip()
+        allowed_types = {"Term date", "Exam", "Holiday", "Meeting", "Sports", "School event"}
+        allowed_audiences = {"Everyone", "Staff", "Parents and students"}
+        try:
+            from datetime import date as _date, time as _time
+            _date.fromisoformat(event_date)
+            if start_time:
+                _time.fromisoformat(start_time)
+            if end_time:
+                _time.fromisoformat(end_time)
+        except ValueError:
+            flash("Enter a valid event date and time.", "error")
+            return redirect(url_for("school_calendar"))
+        if not title or len(title) > 120 or len(description) > 1000 or event_type not in allowed_types or audience not in allowed_audiences:
+            flash("Check the event title, description, type and audience.", "error")
+        elif (start_time is None) != (end_time is None) or (start_time and end_time and start_time >= end_time):
+            flash("Choose both start and end times, and make sure the end is later.", "error")
+        else:
+            db.execute(
+                """INSERT INTO school_events
+                   (school_id, title, description, event_date, created_by, event_type, start_time, end_time, audience)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (g.user["school_id"], title, description, event_date, g.user["id"], event_type, start_time, end_time, audience),
+            )
+            db.commit()
+            flash("School calendar event published.", "success")
+            return redirect(url_for("school_calendar"))
+    month = request.args.get("month", "")
+    from datetime import date as _date
+    try:
+        month_date = _date.fromisoformat(month + "-01") if month else _date.today().replace(day=1)
+    except ValueError:
+        abort(400, description="Choose a valid calendar month.")
+    month_start = month_date.replace(day=1).isoformat()
+    if month_date.month == 12:
+        next_month = month_date.replace(year=month_date.year + 1, month=1, day=1)
+    else:
+        next_month = month_date.replace(month=month_date.month + 1, day=1)
+    events = db.execute(
+        """SELECT id, title, description, event_date, event_type, start_time, end_time, audience
+           FROM school_events WHERE school_id = ? AND event_date >= ? AND event_date < ?
+           ORDER BY event_date, COALESCE(start_time, '00:00'), title""",
+        (g.user["school_id"], month_start, next_month.isoformat()),
+    ).fetchall()
+    return render_template("school_calendar.html", user=g.user, events=events, month=month_date.strftime("%Y-%m"), month_label=month_date.strftime("%B %Y"), previous_month=month_date.replace(day=1).replace(year=(month_date.year-1 if month_date.month==1 else month_date.year), month=(12 if month_date.month==1 else month_date.month-1)).strftime("%Y-%m"), next_month=next_month.strftime("%Y-%m"))
+
+
+@app.get("/teacher/timetable")
+@roles_required("teacher")
+def teacher_timetable():
+    """Show only the signed-in teacher's scheduled lessons."""
+    if g.user["school_id"] is None:
+        abort(403)
+    rows = get_db().execute(
+        """SELECT timetable_entries.weekday, timetable_entries.start_time, timetable_entries.end_time,
+                  timetable_entries.room, teacher_assignments.subject_name, classes.name AS class_name,
+                  classes.stream
+           FROM timetable_entries
+           JOIN teacher_assignments ON teacher_assignments.id = timetable_entries.assignment_id
+           JOIN classes ON classes.id = teacher_assignments.class_id
+           WHERE timetable_entries.school_id = ? AND teacher_assignments.teacher_id = ?
+           ORDER BY timetable_entries.weekday, timetable_entries.start_time""",
+        (g.user["school_id"], g.user["id"]),
+    ).fetchall()
+    return render_template("teacher_timetable.html", user=g.user, timetable=rows)
+
+
+@app.route("/admin/timetable", methods=["GET", "POST"])
+@roles_required("administrator")
+def manage_timetable():
+    """Let an administrator schedule only assignments within their own school."""
+    school_id = g.user["school_id"]
+    if school_id is None:
+        abort(403)
+    db = get_db()
+    if request.method == "POST":
+        assignment_raw = request.form.get("assignment_id", "")
+        weekday_raw = request.form.get("weekday", "")
+        start_time = request.form.get("start_time", "")
+        end_time = request.form.get("end_time", "")
+        room = request.form.get("room", "").strip()
+        from datetime import time as _time
+        try:
+            assignment_id = int(assignment_raw)
+            weekday = int(weekday_raw)
+            start_value, end_value = _time.fromisoformat(start_time), _time.fromisoformat(end_time)
+        except (ValueError, TypeError):
+            flash("Choose a valid lesson, weekday and start/end times.", "error")
+            return redirect(url_for("manage_timetable"))
+        if weekday not in range(7) or start_value >= end_value or len(room) > 80:
+            flash("Check the weekday, time range and room (maximum 80 characters).", "error")
+            return redirect(url_for("manage_timetable"))
+        assignment = db.execute(
+            """SELECT id, teacher_id, class_id FROM teacher_assignments
+               WHERE id = ? AND school_id = ?""", (assignment_id, school_id)
+        ).fetchone()
+        if assignment is None:
+            abort(403)
+        overlaps = db.execute(
+            """SELECT timetable_entries.id, teacher_assignments.teacher_id, teacher_assignments.class_id
+               FROM timetable_entries JOIN teacher_assignments ON teacher_assignments.id = timetable_entries.assignment_id
+               WHERE timetable_entries.school_id = ? AND timetable_entries.weekday = ?
+                 AND timetable_entries.start_time < ? AND timetable_entries.end_time > ?
+                 AND (teacher_assignments.teacher_id = ? OR teacher_assignments.class_id = ?)""",
+            (school_id, weekday, end_time, start_time, assignment["teacher_id"], assignment["class_id"]),
+        ).fetchone()
+        if overlaps:
+            flash("Timetable conflict: this teacher or class already has a lesson during that time.", "error")
+            return redirect(url_for("manage_timetable"))
+        db.execute(
+            """INSERT INTO timetable_entries
+               (school_id, assignment_id, weekday, start_time, end_time, room, created_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (school_id, assignment_id, weekday, start_time, end_time, room, g.user["id"]),
+        )
+        db.commit()
+        flash("Lesson added to the timetable.", "success")
+        return redirect(url_for("manage_timetable"))
+    assignments = db.execute(
+        """SELECT teacher_assignments.id, teacher_assignments.subject_name, users.full_name AS teacher_name,
+                  classes.name AS class_name, classes.stream
+           FROM teacher_assignments JOIN users ON users.id = teacher_assignments.teacher_id
+           JOIN classes ON classes.id = teacher_assignments.class_id
+           WHERE teacher_assignments.school_id = ? AND users.is_active = 1
+           ORDER BY classes.name, classes.stream, users.full_name, teacher_assignments.subject_name""",
+        (school_id,),
+    ).fetchall()
+    rows = db.execute(
+        """SELECT timetable_entries.id, timetable_entries.weekday, timetable_entries.start_time,
+                  timetable_entries.end_time, timetable_entries.room, teacher_assignments.subject_name,
+                  users.full_name AS teacher_name, classes.name AS class_name, classes.stream
+           FROM timetable_entries JOIN teacher_assignments ON teacher_assignments.id = timetable_entries.assignment_id
+           JOIN users ON users.id = teacher_assignments.teacher_id JOIN classes ON classes.id = teacher_assignments.class_id
+           WHERE timetable_entries.school_id = ?
+           ORDER BY timetable_entries.weekday, timetable_entries.start_time, classes.name""",
+        (school_id,),
+    ).fetchall()
+    return render_template("manage_timetable.html", user=g.user, assignments=assignments, timetable=rows)
 
 
 @app.get("/admin")
