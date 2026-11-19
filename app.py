@@ -321,7 +321,7 @@ def school_data():
                 try:
                     db.execute(
                         "INSERT INTO classes (school_id, name, stream, academic_year) VALUES (?, ?, ?, ?)",
-                        (school_id, name, stream, academic_year or None),
+                        (school_id, name, stream, academic_year),
                     )
                     db.commit()
                     flash("Class and stream created.", "success")
