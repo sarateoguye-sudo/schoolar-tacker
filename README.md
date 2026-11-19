@@ -20,9 +20,12 @@ The full roadmap is in [docs/MASTER_REQUIREMENTS.md](docs/MASTER_REQUIREMENTS.md
 - Session cookie settings and baseline response security headers
 - Server-side login checks and an administrator-only example route
 - CLI commands for creating a school and a user
-- Basic automated tests for login and role restrictions
+- Administrator-only school management page for classes, streams, student register and teacher directory
+- School-scoped database queries and checks that prevent assigning a student to another school's class
+- Input length checks, duplicate admission-number handling and parameterized SQL for school records
+- Automated tests for authentication, role restrictions and school record validation
 
-**Not implemented yet:** password reset, multi-factor authentication, login throttling, full school-level data isolation across every operation, parent/child verification, real attendance workflows, audit logs, and production deployment hardening. Passing the starter tests does not mean the entire app is secure.
+**Not implemented yet:** password reset/change workflow, multi-factor authentication, login throttling, full school-level data isolation across every operation, parent/child verification, teacher lesson assignments, real attendance workflows, edit/deactivate approval flows, audit logs, and production deployment hardening. Passing the starter tests does not mean the entire app is secure.
 
 ## Requirements
 
@@ -83,7 +86,7 @@ The full roadmap is in [docs/MASTER_REQUIREMENTS.md](docs/MASTER_REQUIREMENTS.md
    flask --app app run
    ```
 
-7. Open http://127.0.0.1:5000 and select **Sign in**.
+7. Open http://127.0.0.1:5000 and select **Sign in**. Sign in with the administrator account, then open **Manage school records** to create classes/streams, add sample students, and create teacher accounts.
 
 For macOS/Linux, set the secret key with `export SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"` before running the Flask commands.
 
