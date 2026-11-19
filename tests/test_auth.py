@@ -570,5 +570,71 @@ class AuthenticationTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
+
+    def test_administrator_can_publish_school_calendar_event(self):
+        self.login("admin@example.test", "a-long-test-password")
+        self.client.get("/school-calendar")
+        with self.client.session_transaction() as session:
+            token = session["_csrf_token"]
+        response = self.client.post("/school-calendar", data={
+            "_csrf_token": token,
+            "title": "Sample exam week",
+            "description": "Use sample event data in tests.",
+            "event_date": "2026-11-25",
+            "event_type": "Exam",
+            "start_time": "09:00",
+            "end_time": "10:30",
+            "audience": "Everyone",
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Sample exam week", response.data)
+        with scholar_app.app.app_context():
+            row = scholar_app.get_db().execute(
+                "SELECT title, event_date, event_type, start_time, end_time FROM school_events WHERE school_id = 1"
+            ).fetchone()
+        self.assertEqual(tuple(row), ("Sample exam week", "2026-11-25", "Exam", "09:00", "10:30"))
+
+    def test_teacher_timetable_shows_only_the_signed_in_teachers_lessons(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO classes (school_id, name, stream) VALUES (1, 'Form 1', 'East')")
+            class_id = db.execute("SELECT id FROM classes WHERE name = 'Form 1'").fetchone()["id"]
+            db.execute("INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_name) VALUES (1, 2, ?, 'Mathematics')", (class_id,))
+            assignment_id = db.execute("SELECT id FROM teacher_assignments WHERE teacher_id = 2").fetchone()["id"]
+            db.execute("INSERT INTO timetable_entries (school_id, assignment_id, weekday, start_time, end_time, room, created_by) VALUES (1, ?, 0, '08:00', '08:40', 'Room 1', 1)", (assignment_id,))
+            db.commit()
+        self.login("teacher@example.test", "another-long-test-password")
+        response = self.client.get("/teacher/timetable")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Mathematics", response.data)
+        self.assertIn(b"Room 1", response.data)
+        self.assertEqual(self.client.get("/admin/timetable").status_code, 403)
+
+    def test_timetable_rejects_overlapping_teacher_or_class_periods(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO classes (school_id, name, stream) VALUES (1, 'Form 1', 'East')")
+            class_id = db.execute("SELECT id FROM classes WHERE name = 'Form 1'").fetchone()["id"]
+            db.execute("INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_name) VALUES (1, 2, ?, 'Mathematics')", (class_id,))
+            assignment_id = db.execute("SELECT id FROM teacher_assignments WHERE teacher_id = 2").fetchone()["id"]
+            db.execute("INSERT INTO timetable_entries (school_id, assignment_id, weekday, start_time, end_time, room, created_by) VALUES (1, ?, 0, '08:00', '08:40', 'Room 1', 1)", (assignment_id,))
+            db.commit()
+        self.login("admin@example.test", "a-long-test-password")
+        self.client.get("/admin/timetable")
+        with self.client.session_transaction() as session:
+            token = session["_csrf_token"]
+        response = self.client.post("/admin/timetable", data={
+            "_csrf_token": token,
+            "assignment_id": str(assignment_id),
+            "weekday": "0",
+            "start_time": "08:20",
+            "end_time": "09:00",
+            "room": "Room 2",
+        }, follow_redirects=True)
+        self.assertIn(b"Timetable conflict", response.data)
+        with scholar_app.app.app_context():
+            count = scholar_app.get_db().execute("SELECT COUNT(*) FROM timetable_entries").fetchone()[0]
+        self.assertEqual(count, 1)
+
 if __name__ == "__main__":
     unittest.main()
