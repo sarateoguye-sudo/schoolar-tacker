@@ -430,7 +430,7 @@ def school_data():
                         (school_id, full_name, email, generate_password_hash(password)),
                     )
                     db.commit()
-                    flash("Teacher account created. Share the temporary password securely and ask the teacher to change it when password-change support is available.", "success")
+                    flash("Teacher account created. Share the temporary password securely; the teacher must change it at first sign-in.", "success")
                 except sqlite3.IntegrityError:
                     db.rollback()
                     flash("That email address is already registered.", "error")
