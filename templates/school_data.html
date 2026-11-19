@@ -30,6 +30,20 @@
 <label for="assignment_class_id">Class / stream</label><select id="assignment_class_id" name="class_id" required><option value="">Choose class</option>{% for item in classes %}<option value="{{ item['id'] }}">{{ item['name'] }}{% if item['stream'] %} - {{ item['stream'] }}{% endif %}</option>{% endfor %}</select>
 <label for="subject_name">Subject</label><input id="subject_name" name="subject_name" maxlength="100" placeholder="e.g. Mathematics" required>
 <button class="primary-button" type="submit">Assign subject</button></form></article>
+<article class="module-card"><h2>Create parent account</h2>
+<form method="post" class="auth-form">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="create_parent">
+<label for="parent_name">Parent or guardian full name</label><input id="parent_name" name="parent_name" maxlength="120" required>
+<label for="parent_email">Parent email</label><input id="parent_email" name="parent_email" type="email" maxlength="254" required>
+<label for="parent_password">Temporary password (12+ characters)</label><input id="parent_password" name="parent_password" type="password" minlength="12" autocomplete="new-password" required>
+<button class="primary-button" type="submit">Create parent account</button></form><p class="muted-small">Only create accounts after confirming the guardian's identity through your school's approved process.</p></article>
+<article class="module-card"><h2>Link parent to student</h2>
+<form method="post" class="auth-form">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="link_parent">
+<label for="parent_id">Parent account</label><select id="parent_id" name="parent_id" required><option value="">Choose parent</option>{% for parent in parents %}<option value="{{ parent['id'] }}">{{ parent['full_name'] }} — {{ parent['email'] }}</option>{% endfor %}</select>
+<label for="student_id">Student</label><select id="student_id" name="student_id" required><option value="">Choose student</option>{% for item in students %}<option value="{{ item['id'] }}">{{ item['full_name'] }} — {{ item['admission_number'] }}</option>{% endfor %}</select>
+<label for="relationship">Relationship</label><select id="relationship" name="relationship" required><option>Parent</option><option>Mother</option><option>Father</option><option>Guardian</option></select>
+<button class="primary-button" type="submit">Verify and link</button></form><p class="muted-small">This administrator action grants the parent access to the selected student's attendance records.</p></article>
 <article class="module-card"><h2>Add teacher account</h2>
 <form method="post" class="auth-form">
 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="create_teacher">
@@ -45,6 +59,8 @@
 {% if students %}<div class="table-wrap"><table><thead><tr><th>Name</th><th>Admission number</th><th>Class</th><th>Stream</th></tr></thead><tbody>{% for item in students %}<tr><td>{{ item['full_name'] }}</td><td>{{ item['admission_number'] }}</td><td>{{ item['class_name'] or 'Not assigned' }}</td><td>{{ item['stream'] or '—' }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p>No student records created yet.</p>{% endif %}
 <div class="section-heading"><p class="eyebrow">SUBJECT AND CLASS ASSIGNMENTS</p><h2>Teaching assignments</h2></div>
 {% if assignments %}<div class="table-wrap"><table><thead><tr><th>Teacher</th><th>Subject</th><th>Class</th><th>Stream</th></tr></thead><tbody>{% for item in assignments %}<tr><td>{{ item['teacher_name'] }}</td><td>{{ item['subject_name'] }}</td><td>{{ item['class_name'] }}</td><td>{{ item['stream'] or '—' }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p>No teaching assignments created yet.</p>{% endif %}
+<div class="section-heading"><p class="eyebrow">PARENT ACCESS</p><h2>Verified parent-child links</h2></div>
+{% if parent_links %}<div class="table-wrap"><table><thead><tr><th>Parent / guardian</th><th>Student</th><th>Admission number</th><th>Relationship</th></tr></thead><tbody>{% for item in parent_links %}<tr><td>{{ item['parent_name'] }}</td><td>{{ item['student_name'] }}</td><td>{{ item['admission_number'] }}</td><td>{{ item['relationship'] }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p>No parent-child links have been verified yet.</p>{% endif %}
 <div class="section-heading"><p class="eyebrow">STAFF DIRECTORY</p><h2>Teachers</h2></div>
 {% if teachers %}<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Account status</th></tr></thead><tbody>{% for item in teachers %}<tr><td>{{ item['full_name'] }}</td><td>{{ item['email'] }}</td><td>{{ 'Active' if item['is_active'] else 'Inactive' }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p>No teacher accounts created yet.</p>{% endif %}
 </section></main><footer><span>Scholar Tracker</span><span>Development version • Sample data only</span></footer>
