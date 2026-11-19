@@ -636,5 +636,59 @@ class AuthenticationTests(unittest.TestCase):
             count = scholar_app.get_db().execute("SELECT COUNT(*) FROM timetable_entries").fetchone()[0]
         self.assertEqual(count, 1)
 
+    def test_administrator_can_edit_and_delete_own_calendar_event(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            cursor = db.execute(
+                "INSERT INTO school_events (school_id, title, event_date, created_by, event_type, audience) VALUES (1, 'Old event', '2026-11-25', 1, 'Exam', 'Everyone')"
+            )
+            event_id = cursor.lastrowid
+            db.commit()
+        self.login("admin@example.test", "a-long-test-password")
+        self.client.get("/school-calendar")
+        with self.client.session_transaction() as session:
+            token = session["_csrf_token"]
+        response = self.client.post("/school-calendar", data={
+            "_csrf_token": token, "action": "update_event", "event_id": str(event_id),
+            "title": "Updated event", "event_date": "2026-11-26", "event_type": "Meeting",
+            "audience": "Staff", "description": "Updated safely", "start_time": "09:00", "end_time": "10:00",
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        with scholar_app.app.app_context():
+            row = scholar_app.get_db().execute("SELECT title, event_date, audience FROM school_events WHERE id=?", (event_id,)).fetchone()
+        self.assertEqual(tuple(row), ("Updated event", "2026-11-26", "Staff"))
+        self.client.get("/school-calendar")
+        with self.client.session_transaction() as session:
+            token = session["_csrf_token"]
+        response = self.client.post("/school-calendar", data={
+            "_csrf_token": token, "action": "delete_event", "event_id": str(event_id),
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        with scholar_app.app.app_context():
+            count = scholar_app.get_db().execute("SELECT COUNT(*) FROM school_events WHERE id=?", (event_id,)).fetchone()[0]
+        self.assertEqual(count, 0)
+
+    def test_administrator_can_delete_timetable_period(self):
+        class_id, assignment_id = self.create_assignment_fixture()
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            cursor = db.execute(
+                "INSERT INTO timetable_entries (school_id, assignment_id, weekday, start_time, end_time, room, created_by) VALUES (1, ?, 0, '08:00', '08:40', 'Room 1', 1)",
+                (assignment_id,),
+            )
+            entry_id = cursor.lastrowid
+            db.commit()
+        self.login("admin@example.test", "a-long-test-password")
+        self.client.get("/admin/timetable")
+        with self.client.session_transaction() as session:
+            token = session["_csrf_token"]
+        response = self.client.post("/admin/timetable", data={
+            "_csrf_token": token, "action": "delete_period", "entry_id": str(entry_id),
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        with scholar_app.app.app_context():
+            count = scholar_app.get_db().execute("SELECT COUNT(*) FROM timetable_entries WHERE id=?", (entry_id,)).fetchone()[0]
+        self.assertEqual(count, 0)
+
 if __name__ == "__main__":
     unittest.main()
