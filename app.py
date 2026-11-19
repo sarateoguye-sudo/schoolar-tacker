@@ -1,22 +1,32 @@
-"""Scholar Tracker — clean rebuild foundation.
+"""Scholar Tracker application foundation with basic authentication.
 
-This first milestone establishes the Flask application and SQLite schema.
-Authentication and role-based permissions must be implemented before storing real
-student information or deploying to a school.
+Do not use real student data until deployment security, permissions, and privacy
+controls have been reviewed and tested.
 """
+import hmac
 import os
+import secrets
 import sqlite3
+from functools import wraps
 from pathlib import Path
 
 import click
-from flask import Flask, g, render_template
+from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
-DATABASE = Path(os.environ.get("SCHOLAR_TRACKER_DB", BASE_DIR / "scholar_tracker.db"))
+DEFAULT_DATABASE = BASE_DIR / "scholar_tracker.db"
+ALLOWED_ROLES = {"administrator", "teacher", "parent", "student"}
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
-app.config["DATABASE"] = str(DATABASE)
+app.config.update(
+    SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
+    DATABASE=os.environ.get("SCHOLAR_TRACKER_DB", str(DEFAULT_DATABASE)),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "0") == "1",
+    PERMANENT_SESSION_LIFETIME=60 * 60 * 8,
+)
 
 
 def get_db():
@@ -36,8 +46,8 @@ def close_db(_error=None):
 
 
 def init_db():
-    """Create the initial database tables if they do not exist."""
-    DATABASE.parent.mkdir(parents=True, exist_ok=True)
+    """Create initial tables if they do not exist."""
+    Path(app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(app.config["DATABASE"])
     db.execute("PRAGMA foreign_keys = ON")
     db.executescript(
@@ -52,7 +62,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             school_id INTEGER,
             full_name TEXT NOT NULL,
-            email TEXT NOT NULL UNIQUE,
+            email TEXT NOT NULL UNIQUE COLLATE NOCASE,
             role TEXT NOT NULL CHECK (role IN ('administrator', 'teacher', 'parent', 'student')),
             password_hash TEXT NOT NULL,
             is_active INTEGER NOT NULL DEFAULT 1,
@@ -111,6 +121,70 @@ def init_db():
     db.close()
 
 
+def csrf_token():
+    """Return a per-session token for protecting form submissions."""
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = secrets.token_urlsafe(32)
+    return session["_csrf_token"]
+
+
+app.jinja_env.globals["csrf_token"] = csrf_token
+
+
+@app.before_request
+def protect_form_posts():
+    if request.method == "POST":
+        supplied = request.form.get("_csrf_token", "")
+        expected = session.get("_csrf_token", "")
+        if not expected or not supplied or not hmac.compare_digest(supplied, expected):
+            abort(400, description="The form expired or could not be verified. Reload and try again.")
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; style-src 'self'; form-action 'self'; frame-ancestors 'self'; base-uri 'self'")
+    return response
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not g.get("user"):
+            flash("Please sign in to continue.", "info")
+            return redirect(url_for("login"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def roles_required(*roles):
+    def decorator(view):
+        @wraps(view)
+        @login_required
+        def wrapped(*args, **kwargs):
+            if g.user["role"] not in roles:
+                abort(403)
+            return view(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
+@app.before_request
+def load_logged_in_user():
+    user_id = session.get("user_id")
+    g.user = None
+    if user_id is not None:
+        g.user = get_db().execute(
+            "SELECT id, school_id, full_name, email, role FROM users WHERE id = ? AND is_active = 1",
+            (user_id,),
+        ).fetchone()
+        if g.user is None:
+            session.clear()
+
+
 @app.cli.command("init-db")
 def init_db_command():
     """Initialise the local development database."""
@@ -118,26 +192,120 @@ def init_db_command():
     click.echo("Scholar Tracker database initialised.")
 
 
+@app.cli.command("create-school")
+@click.option("--name", prompt="School name")
+@click.option("--county", prompt="County", default="", show_default=False)
+def create_school_command(name, county):
+    """Create a school record and print its new ID."""
+    name = name.strip()
+    if not name:
+        raise click.ClickException("School name cannot be empty.")
+    db = sqlite3.connect(app.config["DATABASE"])
+    try:
+        cursor = db.execute("INSERT INTO schools (name, county) VALUES (?, ?)", (name, county.strip()))
+        db.commit()
+        click.echo(f"School created with ID {cursor.lastrowid}.")
+    finally:
+        db.close()
+
+
+@app.cli.command("create-user")
+@click.option("--name", prompt="Full name")
+@click.option("--email", prompt="Email")
+@click.option("--role", type=click.Choice(sorted(ALLOWED_ROLES)), prompt="Role")
+@click.option("--school-id", type=int, prompt="School ID (use 0 only for a platform-level account)", default=0)
+@click.password_option(confirmation_prompt=True)
+def create_user_command(name, email, role, school_id, password):
+    """Create a user with a securely hashed password."""
+    name, email = name.strip(), email.strip().lower()
+    if not name or not email or "@" not in email:
+        raise click.ClickException("Enter a valid name and email address.")
+    if len(password) < 12:
+        raise click.ClickException("Use a password with at least 12 characters.")
+    db = sqlite3.connect(app.config["DATABASE"])
+    try:
+        if school_id:
+            school = db.execute("SELECT id FROM schools WHERE id = ?", (school_id,)).fetchone()
+            if school is None:
+                raise click.ClickException("That school ID does not exist. Create the school first.")
+        cursor = db.execute(
+            "INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (?, ?, ?, ?, ?)",
+            (school_id or None, name, email, role, generate_password_hash(password)),
+        )
+        db.commit()
+        click.echo(f"User created with ID {cursor.lastrowid} and role {role}.")
+    except sqlite3.IntegrityError:
+        raise click.ClickException("That email address is already registered.")
+    finally:
+        db.close()
+
+
 @app.get("/")
 def index():
-    """Show the project landing page and basic setup status."""
+    """Show the landing page or signed-in user's dashboard."""
+    if g.user:
+        return redirect(url_for("dashboard"))
+    return render_template("index.html")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if g.user:
+        return redirect(url_for("dashboard"))
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        user = get_db().execute(
+            "SELECT id, password_hash, is_active FROM users WHERE email = ? COLLATE NOCASE",
+            (email,),
+        ).fetchone()
+        if user and user["is_active"] and check_password_hash(user["password_hash"], password):
+            session.clear()
+            session["user_id"] = user["id"]
+            session.permanent = True
+            flash("You are signed in.", "success")
+            return redirect(url_for("dashboard"))
+        flash("Email or password is incorrect, or the account is inactive.", "error")
+    return render_template("login.html")
+
+
+@app.post("/logout")
+@login_required
+def logout():
+    session.clear()
+    flash("You have signed out.", "info")
+    return redirect(url_for("login"))
+
+
+@app.get("/dashboard")
+@login_required
+def dashboard():
     db = get_db()
-    stats = {
-        "schools": db.execute("SELECT COUNT(*) FROM schools").fetchone()[0],
-        "students": db.execute("SELECT COUNT(*) FROM students WHERE is_active = 1").fetchone()[0],
-        "classes": db.execute("SELECT COUNT(*) FROM classes").fetchone()[0],
-        "events": db.execute("SELECT COUNT(*) FROM school_events").fetchone()[0],
-    }
-    return render_template("index.html", stats=stats)
+    stats = {"schools": 0, "students": 0, "classes": 0, "events": 0}
+    if g.user["role"] == "administrator" and g.user["school_id"] is not None:
+        school_id = g.user["school_id"]
+        stats = {
+            "schools": 1,
+            "students": db.execute("SELECT COUNT(*) FROM students WHERE school_id = ? AND is_active = 1", (school_id,)).fetchone()[0],
+            "classes": db.execute("SELECT COUNT(*) FROM classes WHERE school_id = ?", (school_id,)).fetchone()[0],
+            "events": db.execute("SELECT COUNT(*) FROM school_events WHERE school_id = ?", (school_id,)).fetchone()[0],
+        }
+    return render_template("dashboard.html", user=g.user, stats=stats)
+
+
+@app.get("/admin")
+@roles_required("administrator")
+def admin_area():
+    """Example administrator-only route; future admin features belong here."""
+    return render_template("admin.html", user=g.user)
 
 
 @app.get("/health")
 def health():
-    """Simple service health endpoint; does not expose database contents."""
+    """Service health endpoint; does not expose database contents."""
     return {"status": "ok", "app": "Scholar Tracker"}
 
 
 if __name__ == "__main__":
     init_db()
-    # Debug is disabled. Use a production WSGI server for deployment.
     app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "5000")), debug=False)
