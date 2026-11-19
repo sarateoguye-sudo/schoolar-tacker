@@ -624,7 +624,7 @@ def manage_timetable():
         (school_id,),
     ).fetchall()
     rows = db.execute(
-        """SELECT timetable_entries.id, timetable_entries.weekday, timetable_entries.start_time,
+        """SELECT timetable_entries.id, timetable_entries.assignment_id, timetable_entries.weekday, timetable_entries.start_time,
                   timetable_entries.end_time, timetable_entries.room, teacher_assignments.subject_name,
                   users.full_name AS teacher_name, classes.name AS class_name, classes.stream
            FROM timetable_entries JOIN teacher_assignments ON teacher_assignments.id = timetable_entries.assignment_id
