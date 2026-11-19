@@ -300,6 +300,107 @@ def admin_area():
     return render_template("admin.html", user=g.user)
 
 
+@app.route("/admin/school-data", methods=["GET", "POST"])
+@roles_required("administrator")
+def school_data():
+    """Manage the signed-in administrator's own school records."""
+    school_id = g.user["school_id"]
+    if school_id is None:
+        abort(403, description="This administrator account is not assigned to a school.")
+
+    db = get_db()
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "create_class":
+            name = request.form.get("class_name", "").strip()
+            stream = request.form.get("stream", "").strip()
+            academic_year = request.form.get("academic_year", "").strip()
+            if not name or len(name) > 80 or len(stream) > 40 or len(academic_year) > 20:
+                flash("Enter a class name (1–80 characters). Stream and academic year must be within their limits.", "error")
+            else:
+                try:
+                    db.execute(
+                        "INSERT INTO classes (school_id, name, stream, academic_year) VALUES (?, ?, ?, ?)",
+                        (school_id, name, stream, academic_year or None),
+                    )
+                    db.commit()
+                    flash("Class and stream created.", "success")
+                except sqlite3.IntegrityError:
+                    db.rollback()
+                    flash("That class, stream and academic year already exist.", "error")
+        elif action == "create_student":
+            full_name = request.form.get("student_name", "").strip()
+            admission_number = request.form.get("admission_number", "").strip()
+            class_id_raw = request.form.get("class_id", "").strip()
+            if not full_name or len(full_name) > 120 or not admission_number or len(admission_number) > 40:
+                flash("Enter a student name (up to 120 characters) and admission number (up to 40 characters).", "error")
+            else:
+                class_id = None
+                if class_id_raw:
+                    if not class_id_raw.isdigit():
+                        flash("Select a valid class.", "error")
+                        return redirect(url_for("school_data"))
+                    class_row = db.execute(
+                        "SELECT id FROM classes WHERE id = ? AND school_id = ?",
+                        (int(class_id_raw), school_id),
+                    ).fetchone()
+                    if class_row is None:
+                        flash("The selected class does not belong to your school.", "error")
+                        return redirect(url_for("school_data"))
+                    class_id = int(class_id_raw)
+                try:
+                    db.execute(
+                        "INSERT INTO students (school_id, class_id, admission_number, full_name) VALUES (?, ?, ?, ?)",
+                        (school_id, class_id, admission_number, full_name),
+                    )
+                    db.commit()
+                    flash("Student record created.", "success")
+                except sqlite3.IntegrityError:
+                    db.rollback()
+                    flash("That admission number is already used in your school.", "error")
+        elif action == "create_teacher":
+            full_name = request.form.get("teacher_name", "").strip()
+            email = request.form.get("teacher_email", "").strip().lower()
+            password = request.form.get("teacher_password", "")
+            if not full_name or len(full_name) > 120 or not email or len(email) > 254 or "@" not in email:
+                flash("Enter a valid teacher name and email address.", "error")
+            elif len(password) < 12:
+                flash("The temporary password must be at least 12 characters.", "error")
+            else:
+                try:
+                    db.execute(
+                        "INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (?, ?, ?, 'teacher', ?)",
+                        (school_id, full_name, email, generate_password_hash(password)),
+                    )
+                    db.commit()
+                    flash("Teacher account created. Share the temporary password securely and ask the teacher to change it when password-change support is available.", "success")
+                except sqlite3.IntegrityError:
+                    db.rollback()
+                    flash("That email address is already registered.", "error")
+        else:
+            abort(400, description="Unknown school management action.")
+        return redirect(url_for("school_data"))
+
+    classes = db.execute(
+        "SELECT id, name, stream, academic_year FROM classes WHERE school_id = ? ORDER BY name, stream",
+        (school_id,),
+    ).fetchall()
+    students = db.execute(
+        """SELECT students.id, students.full_name, students.admission_number, classes.name AS class_name,
+                  classes.stream AS stream
+           FROM students LEFT JOIN classes ON classes.id = students.class_id
+           WHERE students.school_id = ? AND students.is_active = 1
+           ORDER BY students.full_name""",
+        (school_id,),
+    ).fetchall()
+    teachers = db.execute(
+        "SELECT id, full_name, email, is_active FROM users WHERE school_id = ? AND role = 'teacher' ORDER BY full_name",
+        (school_id,),
+    ).fetchall()
+    school = db.execute("SELECT name, county FROM schools WHERE id = ?", (school_id,)).fetchone()
+    return render_template("school_data.html", user=g.user, school=school, classes=classes, students=students, teachers=teachers)
+
+
 @app.get("/health")
 def health():
     """Service health endpoint; does not expose database contents."""
