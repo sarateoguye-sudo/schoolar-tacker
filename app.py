@@ -310,7 +310,16 @@ def dashboard():
             "classes": db.execute("SELECT COUNT(*) FROM classes WHERE school_id = ?", (school_id,)).fetchone()[0],
             "events": db.execute("SELECT COUNT(*) FROM school_events WHERE school_id = ?", (school_id,)).fetchone()[0],
         }
-    return render_template("dashboard.html", user=g.user, stats=stats)
+    teacher_assignments = []
+    if g.user["role"] == "teacher" and g.user["school_id"] is not None:
+        teacher_assignments = db.execute(
+            """SELECT teacher_assignments.id, teacher_assignments.subject_name, classes.name AS class_name, classes.stream
+               FROM teacher_assignments JOIN classes ON classes.id = teacher_assignments.class_id
+               WHERE teacher_assignments.teacher_id = ? AND teacher_assignments.school_id = ?
+               ORDER BY classes.name, classes.stream, teacher_assignments.subject_name""",
+            (g.user["id"], g.user["school_id"]),
+        ).fetchall()
+    return render_template("dashboard.html", user=g.user, stats=stats, teacher_assignments=teacher_assignments)
 
 
 @app.get("/admin")
