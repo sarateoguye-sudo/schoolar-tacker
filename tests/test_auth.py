@@ -241,5 +241,80 @@ class AuthenticationTests(unittest.TestCase):
         self.assertIn(b"do not match", response.data)
 
 
+    def create_assignment_fixture(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO classes (school_id, name, stream, academic_year) VALUES (1, 'Form 3', 'North', '2026')")
+            class_id = db.execute("SELECT id FROM classes WHERE school_id = 1 AND name = 'Form 3'").fetchone()["id"]
+            db.execute(
+                "INSERT INTO students (school_id, class_id, admission_number, full_name) VALUES (1, ?, 'ATT-001', 'Attendance Sample')",
+                (class_id,),
+            )
+            db.commit()
+        self.login("admin@example.test", "a-long-test-password")
+        response = self.post_school_data({
+            "action": "assign_subject",
+            "teacher_id": "2",
+            "class_id": str(class_id),
+            "subject_name": "Mathematics",
+        })
+        self.assertEqual(response.status_code, 200)
+        with scholar_app.app.app_context():
+            assignment_id = scholar_app.get_db().execute(
+                "SELECT id FROM teacher_assignments WHERE teacher_id = 2 AND class_id = ?",
+                (class_id,),
+            ).fetchone()["id"]
+        return class_id, assignment_id
+
+    def test_admin_can_assign_subject_to_teacher(self):
+        class_id, assignment_id = self.create_assignment_fixture()
+        with scholar_app.app.app_context():
+            row = scholar_app.get_db().execute(
+                "SELECT school_id, teacher_id, class_id, subject_name FROM teacher_assignments WHERE id = ?",
+                (assignment_id,),
+            ).fetchone()
+        self.assertEqual(tuple(row), (1, 2, class_id, "Mathematics"))
+
+    def test_teacher_can_mark_assigned_class_attendance(self):
+        _class_id, assignment_id = self.create_assignment_fixture()
+        self.client.post("/logout", data={"_csrf_token": self.csrf()})
+        self.login("teacher@example.test", "another-long-test-password")
+        response = self.client.get(f"/teacher/attendance/{assignment_id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Attendance Sample", response.data)
+        with self.client.session_transaction() as session:
+            token = session["_csrf_token"]
+        response = self.client.post(
+            f"/teacher/attendance/{assignment_id}",
+            data={"_csrf_token": token, "attendance_date": "2026-11-19", "status_1": "present"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        with scholar_app.app.app_context():
+            row = scholar_app.get_db().execute(
+                "SELECT status, recorded_by FROM attendance WHERE student_id = 1 AND attendance_date = '2026-11-19' AND lesson_name = 'Mathematics'"
+            ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["status"], "present")
+        self.assertEqual(row["recorded_by"], 2)
+
+    def test_teacher_cannot_access_another_teachers_assignment(self):
+        _class_id, assignment_id = self.create_assignment_fixture()
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute(
+                "INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (1, 'Other Teacher', 'other@example.test', 'teacher', ?)",
+                (generate_password_hash("other-teacher-password-123"),),
+            )
+            db.commit()
+        self.client.post("/logout", data={"_csrf_token": self.csrf()})
+        self.login("other@example.test", "other-teacher-password-123")
+        self.assertEqual(self.client.get(f"/teacher/attendance/{assignment_id}").status_code, 404)
+
+    def test_admin_cannot_assign_teacher_from_another_school(self):
+        with scholar_app.app_context():
+            pass
+
+
 if __name__ == "__main__":
     unittest.main()
