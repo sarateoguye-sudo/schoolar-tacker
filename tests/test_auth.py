@@ -446,5 +446,42 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(self.client.get("/attendance/reports").status_code, 403)
 
 
+    def test_admin_can_create_parent_account_and_link_student(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO classes (school_id, name, stream, academic_year) VALUES (1, 'Form 3', 'East', '2026')")
+            class_id = db.execute("SELECT id FROM classes WHERE name = 'Form 3' AND school_id = 1").fetchone()["id"]
+            db.execute("INSERT INTO students (school_id, class_id, admission_number, full_name) VALUES (1, ?, 'LINK-001', 'Portal Test Child')", (class_id,))
+            student_id = db.execute("SELECT id FROM students WHERE admission_number = 'LINK-001'").fetchone()["id"]
+            db.commit()
+        self.login("admin@example.test", "a-long-test-password")
+        create_response = self.post_school_data({
+            "action": "create_parent",
+            "parent_name": "Portal Test Parent",
+            "parent_email": "portal-parent@example.test",
+            "parent_password": "temporary-parent-password-123",
+        })
+        self.assertIn(b"Parent account created", create_response.data)
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            parent = db.execute("SELECT id, must_change_password FROM users WHERE email = 'portal-parent@example.test'").fetchone()
+        self.assertIsNotNone(parent)
+        self.assertEqual(parent["must_change_password"], 1)
+        link_response = self.post_school_data({
+            "action": "link_parent",
+            "parent_id": str(parent["id"]),
+            "student_id": str(student_id),
+            "relationship": "Guardian",
+        })
+        self.assertIn(b"Parent-child link created", link_response.data)
+        with scholar_app.app.app_context():
+            linked = scholar_app.get_db().execute(
+                "SELECT relationship, verified_by FROM student_guardians WHERE parent_id = ? AND student_id = ?",
+                (parent["id"], student_id),
+            ).fetchone()
+        self.assertEqual(linked["relationship"], "Guardian")
+        self.assertEqual(linked["verified_by"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
