@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>School Calendar | Scholar Tracker</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body><header class="topbar"><a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark">ST</span><span>Scholar Tracker</span></a><a class="secondary-button" href="{{ url_for('dashboard') }}">Dashboard</a></header>
+<main class="container"><section class="hero"><p class="eyebrow">SCHOOL CALENDAR</p><h1>{{ month_label }} <span>calendar</span></h1><p class="intro">School events for your school. Administrators publish official dates; staff and parents can view events.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<p class="notice" role="status">{{ message }}</p>{% endfor %}{% endwith %}
+<div class="hero-actions"><a class="secondary-button" href="{{ url_for('school_calendar', month=previous_month) }}">← Previous month</a><a class="secondary-button" href="{{ url_for('school_calendar') }}">Current month</a><a class="secondary-button" href="{{ url_for('school_calendar', month=next_month) }}">Next month →</a></div>
+{% if user['role'] == 'administrator' %}<article class="module-card"><h2>Publish a school event</h2><form method="post" class="auth-form">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+<label for="title">Event title</label><input id="title" name="title" maxlength="120" required>
+<label for="event_date">Date</label><input id="event_date" name="event_date" type="date" required>
+<label for="event_type">Event type</label><select id="event_type" name="event_type"><option>School event</option><option>Term date</option><option>Exam</option><option>Holiday</option><option>Meeting</option><option>Sports</option></select>
+<label for="start_time">Start time (optional)</label><input id="start_time" name="start_time" type="time">
+<label for="end_time">End time (optional)</label><input id="end_time" name="end_time" type="time">
+<label for="audience">Audience</label><select id="audience" name="audience"><option>Everyone</option><option>Staff</option><option>Parents and students</option></select>
+<label for="description">Description</label><textarea id="description" name="description" maxlength="1000" rows="3"></textarea>
+<button class="primary-button" type="submit">Publish event</button></form></article>{% endif %}
+<section class="modules"><div class="section-heading"><h2>Events</h2><p>Listed by date and time.</p></div>
+{% if events %}<div class="module-grid">{% for event in events %}<article class="module-card"><p class="eyebrow">{{ event['event_type'] }} · {{ event['event_date'] }}</p><h3>{{ event['title'] }}</h3>{% if event['start_time'] and event['end_time'] %}<p>{{ event['start_time'] }}–{{ event['end_time'] }}</p>{% endif %}{% if event['description'] %}<p>{{ event['description'] }}</p>{% endif %}<p><small>Audience: {{ event['audience'] }}</small></p></article>{% endfor %}</div>{% else %}<p>No events have been published for this month.</p>{% endif %}</section></section></main><footer><span>Scholar Tracker</span><span>School calendar</span></footer></body></html>
