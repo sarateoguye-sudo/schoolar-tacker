@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Notifications | Scholar Tracker</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body>
+<header class="topbar"><a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark">ST</span><span>Scholar Tracker</span></a><a class="secondary-button" href="{{ url_for('dashboard') }}">Dashboard</a></header>
+<main class="container"><section class="hero">
+<p class="eyebrow">IN-APP NOTIFICATIONS</p><h1>Your <span>notifications</span></h1>
+<p class="intro">These alerts are available inside Scholar Tracker. SMS and email delivery are not connected.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<p class="notice" role="status">{{ message }}</p>{% endfor %}{% endwith %}
+{% if notifications %}
+<div class="module-grid">
+{% for item in notifications %}
+<article class="module-card">
+<h2>{{ item['title'] }}{% if not item['is_read'] %} <span>— New</span>{% endif %}</h2>
+<p>{{ item['message'] }}</p><p><small>{{ item['created_at'] }}</small></p>
+{% if not item['is_read'] %}<form method="post" action="{{ url_for('mark_notification_read', notification_id=item['id']) }}"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><button class="secondary-button" type="submit">Mark as read</button></form>{% endif %}
+</article>
+{% endfor %}
+</div>
+{% else %}<p>You have no notifications yet.</p>{% endif %}
+<p class="notice">Attendance alerts depend on a teacher saving the register. If an attendance record is corrected, its earlier alert is updated to explain the correction.</p>
+</section></main><footer><span>Scholar Tracker</span><span>Development version</span></footer>
+</body></html>
