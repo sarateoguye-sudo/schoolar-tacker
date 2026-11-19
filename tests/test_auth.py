@@ -400,5 +400,51 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(self.client.get("/attendance/reports").status_code, 403)
 
 
+    def test_parent_can_view_only_administrator_linked_child(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO classes (school_id, name, stream, academic_year) VALUES (1, 'Form 2', 'North', '2026')")
+            class_id = db.execute("SELECT id FROM classes WHERE name = 'Form 2' AND school_id = 1").fetchone()["id"]
+            db.execute("INSERT INTO students (school_id, class_id, admission_number, full_name) VALUES (1, ?, 'PAR-001', 'Linked Child')", (class_id,))
+            db.execute("INSERT INTO students (school_id, class_id, admission_number, full_name) VALUES (1, ?, 'PAR-002', 'Unlinked Child')", (class_id,))
+            linked_id = db.execute("SELECT id FROM students WHERE admission_number = 'PAR-001'").fetchone()["id"]
+            unlinked_id = db.execute("SELECT id FROM students WHERE admission_number = 'PAR-002'").fetchone()["id"]
+            db.execute("INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (1, 'Test Parent', 'parent@example.test', 'parent', ?)", (generate_password_hash("parent-long-password-123"),))
+            parent_id = db.execute("SELECT id FROM users WHERE email = 'parent@example.test'").fetchone()["id"]
+            db.execute("INSERT INTO student_guardians (school_id, student_id, parent_id, relationship, verified_by) VALUES (1, ?, ?, 'Mother', 1)", (linked_id, parent_id))
+            db.execute("INSERT INTO attendance (student_id, class_id, attendance_date, lesson_name, status, recorded_by) VALUES (?, ?, '2026-11-19', 'Mathematics', 'present', 2)", (linked_id, class_id))
+            db.commit()
+        self.login("parent@example.test", "parent-long-password-123")
+        response = self.client.get(f"/parent/children/{linked_id}/attendance")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Linked Child", response.data)
+        self.assertIn(b"Mathematics", response.data)
+        self.assertEqual(self.client.get(f"/parent/children/{unlinked_id}/attendance").status_code, 404)
+
+    def test_parent_cannot_link_to_student_from_another_school(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO schools (id, name) VALUES (2, 'Other School')")
+            db.execute("INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (1, 'Test Parent', 'link-parent@example.test', 'parent', ?)", (generate_password_hash("parent-long-password-123"),))
+            db.execute("INSERT INTO students (school_id, admission_number, full_name) VALUES (2, 'OTHER-001', 'Other School Child')")
+            db.commit()
+            parent_id = db.execute("SELECT id FROM users WHERE email = 'link-parent@example.test'").fetchone()["id"]
+            other_student_id = db.execute("SELECT id FROM students WHERE admission_number = 'OTHER-001'").fetchone()["id"]
+        self.login("admin@example.test", "a-long-test-password")
+        response = self.post_school_data({"action": "link_parent", "parent_id": str(parent_id), "student_id": str(other_student_id), "relationship": "Guardian"})
+        self.assertIn(b"must both belong to your school", response.data)
+        with scholar_app.app.app_context():
+            count = scholar_app.get_db().execute("SELECT COUNT(*) FROM student_guardians").fetchone()[0]
+        self.assertEqual(count, 0)
+
+    def test_parent_role_cannot_open_attendance_reports(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (1, 'Test Parent', 'report-parent@example.test', 'parent', ?)", (generate_password_hash("parent-long-password-123"),))
+            db.commit()
+        self.login("report-parent@example.test", "parent-long-password-123")
+        self.assertEqual(self.client.get("/attendance/reports").status_code, 403)
+
+
 if __name__ == "__main__":
     unittest.main()
