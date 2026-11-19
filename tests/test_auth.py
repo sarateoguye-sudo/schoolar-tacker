@@ -89,5 +89,99 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(self.client.get("/dashboard").status_code, 302)
 
 
+    def post_school_data(self, form_data):
+        self.client.get("/admin/school-data")
+        with self.client.session_transaction() as session:
+            token = session["_csrf_token"]
+        data = {"_csrf_token": token, **form_data}
+        return self.client.post("/admin/school-data", data=data, follow_redirects=True)
+
+    def test_administrator_can_create_class_and_stream(self):
+        self.login("admin@example.test", "a-long-test-password")
+        response = self.post_school_data({
+            "action": "create_class",
+            "class_name": "Form 1",
+            "stream": "East",
+            "academic_year": "2026",
+        })
+        self.assertEqual(response.status_code, 200)
+        with scholar_app.app.app_context():
+            row = scholar_app.get_db().execute(
+                "SELECT name, stream, academic_year FROM classes WHERE school_id = 1"
+            ).fetchone()
+        self.assertEqual(tuple(row), ("Form 1", "East", "2026"))
+
+    def test_teacher_cannot_access_school_management(self):
+        self.login("teacher@example.test", "another-long-test-password")
+        self.assertEqual(self.client.get("/admin/school-data").status_code, 403)
+
+    def test_administrator_can_register_student_in_own_class(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute(
+                "INSERT INTO classes (school_id, name, stream, academic_year) VALUES (1, 'Form 2', 'West', '2026')"
+            )
+            db.commit()
+            class_id = db.execute("SELECT id FROM classes WHERE name = 'Form 2'").fetchone()["id"]
+        self.login("admin@example.test", "a-long-test-password")
+        response = self.post_school_data({
+            "action": "create_student",
+            "student_name": "Sample Student",
+            "admission_number": "TEST-001",
+            "class_id": str(class_id),
+        })
+        self.assertEqual(response.status_code, 200)
+        with scholar_app.app.app_context():
+            row = scholar_app.get_db().execute(
+                "SELECT school_id, class_id, full_name, admission_number FROM students WHERE admission_number = 'TEST-001'"
+            ).fetchone()
+        self.assertEqual(tuple(row), (1, class_id, "Sample Student", "TEST-001"))
+
+    def test_student_cannot_be_assigned_to_another_school_class(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO schools (id, name) VALUES (2, 'Other School')")
+            db.execute(
+                "INSERT INTO classes (school_id, name, stream, academic_year) VALUES (2, 'Form 1', 'North', '2026')"
+            )
+            db.commit()
+            foreign_class_id = db.execute("SELECT id FROM classes WHERE school_id = 2").fetchone()["id"]
+        self.login("admin@example.test", "a-long-test-password")
+        response = self.post_school_data({
+            "action": "create_student",
+            "student_name": "Sample Student",
+            "admission_number": "TEST-OTHER",
+            "class_id": str(foreign_class_id),
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"does not belong to your school", response.data)
+        with scholar_app.app.app_context():
+            count = scholar_app.get_db().execute(
+                "SELECT COUNT(*) FROM students WHERE admission_number = 'TEST-OTHER'"
+            ).fetchone()[0]
+        self.assertEqual(count, 0)
+
+    def test_duplicate_admission_number_is_rejected(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute(
+                "INSERT INTO students (school_id, admission_number, full_name) VALUES (1, 'DUP-001', 'First Sample')"
+            )
+            db.commit()
+        self.login("admin@example.test", "a-long-test-password")
+        response = self.post_school_data({
+            "action": "create_student",
+            "student_name": "Second Sample",
+            "admission_number": "DUP-001",
+            "class_id": "",
+        })
+        self.assertIn(b"already used in your school", response.data)
+        with scholar_app.app.app_context():
+            count = scholar_app.get_db().execute(
+                "SELECT COUNT(*) FROM students WHERE admission_number = 'DUP-001'"
+            ).fetchone()[0]
+        self.assertEqual(count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
