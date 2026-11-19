@@ -7,8 +7,9 @@
 **Implementation snapshot for `scholar-tracker-rebuild` (not a completion claim):**
 - Implemented in code: administrator-created parent accounts; administrator-created parent-to-student links within the same school; parent dashboard showing linked children; read-only attendance history for a linked child; server-side checks that block a parent from opening an unlinked child's attendance page.
 - Implemented in code: in-app absence notifications to linked active parent accounts, notification inbox with per-user access checks and mark-as-read, duplicate-alert prevention, and an administrator dashboard list of students with absences on at least three distinct days in the last 30 days.
+- Implemented in code: administrator-published school calendar events with month navigation and audience visibility, plus a weekly timetable for existing teacher/class/subject assignments. The timetable blocks overlapping periods for the same teacher or class, and teachers see only their own scheduled lessons.
 - Implemented in code: teacher subject/class assignments, teacher attendance registers, and attendance history reports with role-scoped access.
-- Not yet implemented: independent parent email/phone verification, automatic account recovery, SMS/email delivery, parent academic reports, and the two-guardian-per-student limit.
+- Not yet implemented: independent parent email/phone verification, automatic account recovery, SMS/email delivery, parent academic reports, the two-guardian-per-student limit, and timetable edit/delete or substitute-teacher workflows.
 - Verification status: automated tests have been added, but the test suite has not yet been run successfully in this environment. Treat these features as **In Progress** until tests and security review pass.
 
 ## 1. School management
