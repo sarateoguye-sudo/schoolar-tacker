@@ -15,6 +15,7 @@ The full roadmap is in [docs/MASTER_REQUIREMENTS.md](docs/MASTER_REQUIREMENTS.md
 - Flask app and SQLite database initialisation
 - Starter database tables for schools, users, classes/streams, students, attendance, and school events
 - Sign-in and sign-out routes
+- Required first-sign-in password change for teacher accounts created by the school admin
 - Password hashes using Werkzeug security helpers (plain-text passwords are not stored)
 - CSRF token check for POST forms
 - Session cookie settings and baseline response security headers
@@ -25,7 +26,7 @@ The full roadmap is in [docs/MASTER_REQUIREMENTS.md](docs/MASTER_REQUIREMENTS.md
 - Input length checks, duplicate admission-number handling and parameterized SQL for school records
 - Automated tests for authentication, role restrictions and school record validation
 
-**Not implemented yet:** password reset/change workflow, multi-factor authentication, login throttling, full school-level data isolation across every operation, parent/child verification, teacher lesson assignments, real attendance workflows, edit/deactivate approval flows, audit logs, and production deployment hardening. Passing the starter tests does not mean the entire app is secure.
+**Not implemented yet:** password reset for forgotten passwords, multi-factor authentication, login throttling, full school-level data isolation across every operation, parent/child verification, teacher lesson assignments, real attendance workflows, edit/deactivate approval flows, audit logs, and production deployment hardening. Passing the starter tests does not mean the entire app is secure.
 
 ## Requirements
 
