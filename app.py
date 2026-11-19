@@ -534,14 +534,18 @@ def manage_timetable():
         if overlaps:
             flash("Timetable conflict: this teacher or class already has a lesson during that time.", "error")
             return redirect(url_for("manage_timetable"))
-        db.execute(
-            """INSERT INTO timetable_entries
-               (school_id, assignment_id, weekday, start_time, end_time, room, created_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (school_id, assignment_id, weekday, start_time, end_time, room, g.user["id"]),
-        )
-        db.commit()
-        flash("Lesson added to the timetable.", "success")
+        try:
+            db.execute(
+                """INSERT INTO timetable_entries
+                   (school_id, assignment_id, weekday, start_time, end_time, room, created_by)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (school_id, assignment_id, weekday, start_time, end_time, room, g.user["id"]),
+            )
+            db.commit()
+            flash("Lesson added to the timetable.", "success")
+        except sqlite3.IntegrityError:
+            db.rollback()
+            flash("That exact lesson period is already on the timetable.", "error")
         return redirect(url_for("manage_timetable"))
     assignments = db.execute(
         """SELECT teacher_assignments.id, teacher_assignments.subject_name, users.full_name AS teacher_name,
