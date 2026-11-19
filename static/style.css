@@ -84,3 +84,13 @@ th, td { padding: 12px 15px; border-bottom: 1px solid var(--line); white-space: 
 th { background: #f0f3f8; color: var(--ink); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
 tr:last-child td { border-bottom: 0; }
 @media (max-width: 900px) { .management-grid { grid-template-columns: 1fr; } }
+
+.seating-grid,.seat-view{display:grid;grid-template-columns:repeat(var(--seat-columns),minmax(0,1fr));gap:.55rem;margin:1rem 0;overflow-x:auto}
+.seat-cell{min-width:130px;padding:.55rem;border:1px solid #d8e0eb;border-radius:10px;background:#fff}
+.seat-cell label{display:block;font-size:.8rem;font-weight:600;margin-bottom:.4rem}
+.seat-cell select{width:100%;min-width:0}
+.teacher-desk{max-width:320px;margin:1.5rem auto;padding:.8rem;text-align:center;border:2px solid #8a9bb1;border-radius:8px;font-weight:700;letter-spacing:.08em;background:#eef3f9}
+.seat-box{min-width:110px;min-height:74px;padding:.55rem;border:1px solid #b8c7d9;border-radius:10px;background:#f5f8fc;display:flex;flex-direction:column;justify-content:center;gap:.35rem;text-align:center;overflow-wrap:anywhere}
+.seat-box span{font-size:.72rem;color:#53657a}.seat-box strong{font-size:.9rem}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+@media(max-width:700px){.seating-grid,.seat-view{grid-template-columns:repeat(var(--seat-columns),minmax(120px,1fr));overflow-x:auto}.form-row{grid-template-columns:1fr}}
