@@ -15,4 +15,16 @@
 <label for="description">Description</label><textarea id="description" name="description" maxlength="1000" rows="3"></textarea>
 <button class="primary-button" type="submit">Publish event</button></form></article>{% endif %}
 <section class="modules"><div class="section-heading"><h2>Events</h2><p>Listed by date and time.</p></div>
-{% if events %}<div class="module-grid">{% for event in events %}<article class="module-card"><p class="eyebrow">{{ event['event_type'] }} · {{ event['event_date'] }}</p><h3>{{ event['title'] }}</h3>{% if event['start_time'] and event['end_time'] %}<p>{{ event['start_time'] }}–{{ event['end_time'] }}</p>{% endif %}{% if event['description'] %}<p>{{ event['description'] }}</p>{% endif %}<p><small>Audience: {{ event['audience'] }}</small></p></article>{% endfor %}</div>{% else %}<p>No events have been published for this month.</p>{% endif %}</section></section></main><footer><span>Scholar Tracker</span><span>School calendar</span></footer></body></html>
+{% if events %}<div class="module-grid">{% for event in events %}<article class="module-card"><p class="eyebrow">{{ event['event_type'] }} · {{ event['event_date'] }}</p><h3>{{ event['title'] }}</h3>{% if event['start_time'] and event['end_time'] %}<p>{{ event['start_time'] }}–{{ event['end_time'] }}</p>{% endif %}{% if event['description'] %}<p>{{ event['description'] }}</p>{% endif %}<p><small>Audience: {{ event['audience'] }}</small></p>
+{% if user['role'] == 'administrator' %}
+<details><summary>Edit event</summary><form method="post" class="auth-form">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="update_event"><input type="hidden" name="event_id" value="{{ event['id'] }}">
+<label>Title</label><input name="title" maxlength="120" value="{{ event['title'] }}" required>
+<label>Date</label><input name="event_date" type="date" value="{{ event['event_date'] }}" required>
+<label>Event type</label><select name="event_type">{% for kind in ['School event','Term date','Exam','Holiday','Meeting','Sports'] %}<option {% if event['event_type'] == kind %}selected{% endif %}>{{ kind }}</option>{% endfor %}</select>
+<label>Start time</label><input name="start_time" type="time" value="{{ event['start_time'] or '' }}">
+<label>End time</label><input name="end_time" type="time" value="{{ event['end_time'] or '' }}">
+<label>Audience</label><select name="audience">{% for audience_option in ['Everyone','Staff','Parents and students'] %}<option {% if event['audience'] == audience_option %}selected{% endif %}>{{ audience_option }}</option>{% endfor %}</select>
+<label>Description</label><textarea name="description" maxlength="1000" rows="3">{{ event['description'] or '' }}</textarea><button class="primary-button" type="submit">Save changes</button></form>
+<form method="post" onsubmit="return confirm('Delete this calendar event?')"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete_event"><input type="hidden" name="event_id" value="{{ event['id'] }}"><button class="secondary-button" type="submit">Delete event</button></form></details>{% endif %}
+</article>{% endfor %}</div>{% else %}<p>No events have been published for this month.</p>{% endif %}</section></section></main><footer><span>Scholar Tracker</span><span>School calendar</span></footer></body></html>
