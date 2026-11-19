@@ -277,7 +277,10 @@ class AuthenticationTests(unittest.TestCase):
 
     def test_teacher_can_mark_assigned_class_attendance(self):
         _class_id, assignment_id = self.create_assignment_fixture()
-        self.client.post("/logout", data={"_csrf_token": self.csrf()})
+        self.client.get("/dashboard")
+        with self.client.session_transaction() as session:
+            logout_token = session["_csrf_token"]
+        self.client.post("/logout", data={"_csrf_token": logout_token})
         self.login("teacher@example.test", "another-long-test-password")
         response = self.client.get(f"/teacher/attendance/{assignment_id}")
         self.assertEqual(response.status_code, 200)
@@ -312,8 +315,28 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(self.client.get(f"/teacher/attendance/{assignment_id}").status_code, 404)
 
     def test_admin_cannot_assign_teacher_from_another_school(self):
-        with scholar_app.app_context():
-            pass
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO schools (id, name) VALUES (2, 'Other School')")
+            db.execute(
+                "INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (2, 'Outside Teacher', 'outside@example.test', 'teacher', ?)",
+                (generate_password_hash("outside-teacher-password-123"),),
+            )
+            db.execute("INSERT INTO classes (school_id, name, stream, academic_year) VALUES (1, 'Form 4', 'South', '2026')")
+            local_class_id = db.execute("SELECT id FROM classes WHERE school_id = 1 AND name = 'Form 4'").fetchone()["id"]
+            outside_teacher_id = db.execute("SELECT id FROM users WHERE email = 'outside@example.test'").fetchone()["id"]
+            db.commit()
+        self.login("admin@example.test", "a-long-test-password")
+        response = self.post_school_data({
+            "action": "assign_subject",
+            "teacher_id": str(outside_teacher_id),
+            "class_id": str(local_class_id),
+            "subject_name": "English",
+        })
+        self.assertIn(b"not part of your school", response.data)
+        with scholar_app.app.app_context():
+            count = scholar_app.get_db().execute("SELECT COUNT(*) FROM teacher_assignments").fetchone()[0]
+        self.assertEqual(count, 0)
 
 
 if __name__ == "__main__":
