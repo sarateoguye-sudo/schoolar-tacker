@@ -693,5 +693,55 @@ class AuthenticationTests(unittest.TestCase):
             count = scholar_app.get_db().execute("SELECT COUNT(*) FROM timetable_entries WHERE id=?", (entry_id,)).fetchone()[0]
         self.assertEqual(count, 0)
 
+
+    def test_teacher_or_admin_can_save_academic_marks_for_assignment(self):
+        class_id, assignment_id = self.create_assignment_fixture()
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute(
+                "INSERT INTO students (school_id, class_id, admission_number, full_name) VALUES (1, ?, 'ACAD-001', 'Report Test Student')",
+                (class_id,),
+            )
+            student_id = db.execute("SELECT id FROM students WHERE admission_number='ACAD-001'").fetchone()["id"]
+            db.commit()
+        self.client.get(f"/academic-reports?assignment_id={assignment_id}")
+        with self.client.session_transaction() as session:
+            token = session["_csrf_token"]
+        response = self.client.post("/academic-reports", data={
+            "_csrf_token": token,
+            "assignment_id": str(assignment_id),
+            "assessment_name": "Mid-term",
+            "term": "Term 1",
+            "academic_year": "2026",
+            "max_score": "100",
+            f"score_{student_id}": "78",
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        with scholar_app.app.app_context():
+            row = scholar_app.get_db().execute(
+                "SELECT subject_name, assessment_name, term, academic_year, score, max_score FROM academic_results WHERE student_id=?",
+                (student_id,),
+            ).fetchone()
+        self.assertEqual(tuple(row), ("Mathematics", "Mid-term", "Term 1", "2026", 78.0, 100.0))
+
+    def test_teacher_cannot_enter_marks_for_another_teachers_assignment(self):
+        class_id, assignment_id = self.create_assignment_fixture()
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute(
+                "INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (1, 'Other Teacher', 'other@example.test', 'teacher', ?)",
+                (generate_password_hash("a-different-test-password"),),
+            )
+            other_id = db.execute("SELECT id FROM users WHERE email='other@example.test'").fetchone()["id"]
+            db.execute(
+                "INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_name) VALUES (1, ?, ?, 'Science')",
+                (other_id, class_id),
+            )
+            db.commit()
+        self.client.post("/logout", data={"_csrf_token": self.csrf()})
+        self.login("teacher@example.test", "another-long-test-password")
+        response = self.client.get(f"/academic-reports?assignment_id={assignment_id}")
+        self.assertEqual(response.status_code, 404)
+
 if __name__ == "__main__":
     unittest.main()
