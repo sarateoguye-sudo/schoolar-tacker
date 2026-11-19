@@ -142,7 +142,33 @@ def init_db():
             FOREIGN KEY (school_id) REFERENCES schools(id),
             FOREIGN KEY (created_by) REFERENCES users(id)
         );
-                CREATE TABLE IF NOT EXISTS notifications (
+                CREATE TABLE IF NOT EXISTS seating_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            school_id INTEGER NOT NULL,
+            class_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            rows_count INTEGER NOT NULL CHECK (rows_count BETWEEN 1 AND 12),
+            columns_count INTEGER NOT NULL CHECK (columns_count BETWEEN 1 AND 12),
+            status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
+            created_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (school_id) REFERENCES schools(id),
+            FOREIGN KEY (class_id) REFERENCES classes(id),
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS seating_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id INTEGER NOT NULL,
+            student_id INTEGER NOT NULL,
+            row_number INTEGER NOT NULL CHECK (row_number BETWEEN 1 AND 12),
+            column_number INTEGER NOT NULL CHECK (column_number BETWEEN 1 AND 12),
+            FOREIGN KEY (plan_id) REFERENCES seating_plans(id) ON DELETE CASCADE,
+            FOREIGN KEY (student_id) REFERENCES students(id),
+            UNIQUE (plan_id, student_id),
+            UNIQUE (plan_id, row_number, column_number)
+        );
+        CREATE TABLE IF NOT EXISTS notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             school_id INTEGER NOT NULL,
@@ -402,6 +428,186 @@ def dashboard():
     ).fetchone()[0]
     return render_template("dashboard.html", user=g.user, stats=stats, teacher_assignments=teacher_assignments, parent_children=parent_children, repeated_absences=repeated_absences, unread_notifications=unread_notifications)
 
+
+@app.route("/seating-plan", methods=["GET", "POST"])
+@login_required
+def seating_plan():
+    """Admin-managed seating plans; teachers and parents receive read-only views."""
+    if g.user["school_id"] is None:
+        abort(403)
+    db = get_db()
+    school_id = g.user["school_id"]
+    role = g.user["role"]
+
+    if request.method == "POST":
+        if role != "administrator":
+            abort(403)
+        action = request.form.get("action", "create_plan")
+        if action == "create_plan":
+            title = request.form.get("title", "").strip()
+            class_raw = request.form.get("class_id", "")
+            try:
+                class_id = int(class_raw)
+                rows_count = int(request.form.get("rows_count", ""))
+                columns_count = int(request.form.get("columns_count", ""))
+            except (ValueError, TypeError):
+                flash("Choose a class and valid row/column counts.", "error")
+                return redirect(url_for("seating_plan"))
+            class_row = db.execute("SELECT id FROM classes WHERE id=? AND school_id=?", (class_id, school_id)).fetchone()
+            if not title or len(title) > 120 or class_row is None or not 1 <= rows_count <= 12 or not 1 <= columns_count <= 12:
+                flash("Check the plan title, class, and layout size (1–12 rows and columns).", "error")
+                return redirect(url_for("seating_plan"))
+            cursor = db.execute(
+                "INSERT INTO seating_plans (school_id, class_id, title, rows_count, columns_count, created_by) VALUES (?, ?, ?, ?, ?, ?)",
+                (school_id, class_id, title, rows_count, columns_count, g.user["id"]),
+            )
+            db.commit()
+            flash("Seating plan created as a draft. Assign students, then publish it.", "success")
+            return redirect(url_for("seating_plan", plan_id=cursor.lastrowid))
+        plan_raw = request.form.get("plan_id", "")
+        if not plan_raw.isdigit():
+            abort(400, description="Invalid seating plan.")
+        plan_id = int(plan_raw)
+        plan = db.execute("SELECT * FROM seating_plans WHERE id=? AND school_id=?", (plan_id, school_id)).fetchone()
+        if plan is None:
+            abort(404)
+        if action == "publish":
+            db.execute("UPDATE seating_plans SET status='published', updated_at=CURRENT_TIMESTAMP WHERE id=? AND school_id=?", (plan_id, school_id))
+            db.commit()
+            flash("Seating plan published for permitted viewers.", "success")
+            return redirect(url_for("seating_plan", plan_id=plan_id))
+        if action == "save_seats":
+            if plan["status"] == "published":
+                flash("Unpublish the plan before editing its seats.", "error")
+                return redirect(url_for("seating_plan", plan_id=plan_id))
+            # Replace assignments atomically; empty seats are allowed.
+            try:
+                db.execute("BEGIN")
+                db.execute("DELETE FROM seating_assignments WHERE plan_id=?", (plan_id,))
+                occupied = set()
+                assigned_students = set()
+                for key, value in request.form.items():
+                    if not key.startswith("seat_") or not value.strip():
+                        continue
+                    parts = key.split("_")
+                    if len(parts) != 3 or not parts[1].isdigit() or not parts[2].isdigit():
+                        raise ValueError("Invalid seat field.")
+                    row_number, column_number, student_id = int(parts[1]), int(parts[2]), int(value)
+                    if not (1 <= row_number <= plan["rows_count"] and 1 <= column_number <= plan["columns_count"]):
+                        raise ValueError("Seat is outside the layout.")
+                    student = db.execute("SELECT id FROM students WHERE id=? AND school_id=? AND class_id=? AND is_active=1", (student_id, school_id, plan["class_id"])).fetchone()
+                    if student is None or student_id in assigned_students or (row_number, column_number) in occupied:
+                        raise ValueError("Each student and seat may be used only once, and students must belong to this class.")
+                    assigned_students.add(student_id)
+                    occupied.add((row_number, column_number))
+                    db.execute("INSERT INTO seating_assignments (plan_id, student_id, row_number, column_number) VALUES (?, ?, ?, ?)", (plan_id, student_id, row_number, column_number))
+                db.execute("UPDATE seating_plans SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (plan_id,))
+                db.commit()
+            except (ValueError, sqlite3.IntegrityError):
+                db.rollback()
+                flash("Seats were not saved. Check for duplicate students, occupied seats, or students from another class.", "error")
+                return redirect(url_for("seating_plan", plan_id=plan_id))
+            flash("Seating assignments saved.", "success")
+            return redirect(url_for("seating_plan", plan_id=plan_id))
+        abort(400, description="Unknown seating-plan action.")
+
+    classes = db.execute("SELECT id, name, stream, academic_year FROM classes WHERE school_id=? ORDER BY name, stream", (school_id,)).fetchall()
+    plans = []
+    selected_plan = None
+    students = []
+    assignments = {}
+    if role == "administrator":
+        plans = db.execute(
+            """SELECT seating_plans.*, classes.name AS class_name, classes.stream
+               FROM seating_plans JOIN classes ON classes.id=seating_plans.class_id
+               WHERE seating_plans.school_id=? ORDER BY seating_plans.updated_at DESC, seating_plans.id DESC""",
+            (school_id,),
+        ).fetchall()
+        plan_raw = request.args.get("plan_id", "")
+        if plan_raw.isdigit():
+            selected_plan = db.execute("SELECT * FROM seating_plans WHERE id=? AND school_id=?", (int(plan_raw), school_id)).fetchone()
+            if selected_plan:
+                students = db.execute("SELECT id, full_name, admission_number FROM students WHERE school_id=? AND class_id=? AND is_active=1 ORDER BY full_name", (school_id, selected_plan["class_id"])).fetchall()
+                assignments = {(row["row_number"], row["column_number"]): row["student_id"] for row in db.execute("SELECT row_number, column_number, student_id FROM seating_assignments WHERE plan_id=?", (selected_plan["id"],)).fetchall()}
+    elif role == "teacher":
+        plans = db.execute(
+            """SELECT DISTINCT seating_plans.*, classes.name AS class_name, classes.stream
+               FROM seating_plans JOIN classes ON classes.id=seating_plans.class_id
+               JOIN teacher_assignments ON teacher_assignments.class_id=classes.id AND teacher_assignments.school_id=classes.school_id
+               WHERE seating_plans.school_id=? AND seating_plans.status='published'
+                 AND teacher_assignments.teacher_id=? ORDER BY classes.name, classes.stream""",
+            (school_id, g.user["id"]),
+        ).fetchall()
+    elif role in ("parent", "student"):
+        if role == "parent":
+            plans = db.execute(
+                """SELECT DISTINCT seating_plans.*, classes.name AS class_name, classes.stream
+                   FROM seating_plans JOIN classes ON classes.id=seating_plans.class_id
+                   JOIN students ON students.class_id=classes.id
+                   JOIN student_guardians ON student_guardians.student_id=students.id
+                   WHERE seating_plans.school_id=? AND seating_plans.status='published'
+                     AND student_guardians.parent_id=? AND student_guardians.school_id=?
+                   ORDER BY classes.name, classes.stream""",
+                (school_id, g.user["id"], school_id),
+            ).fetchall()
+        else:
+            # Student accounts are not linked to student records yet; do not expose other students' seats.
+            plans = []
+    return render_template("seating_plan.html", user=g.user, classes=classes, plans=plans,
+                           selected_plan=selected_plan, students=students, assignments=assignments)
+
+@app.get("/seating-plan/<int:plan_id>")
+@login_required
+def view_seating_plan(plan_id):
+    """Read-only seating plan view scoped to role, school and student/teacher links."""
+    if g.user["school_id"] is None:
+        abort(403)
+    db = get_db()
+    school_id = g.user["school_id"]
+    plan = db.execute(
+        """SELECT seating_plans.*, classes.name AS class_name, classes.stream
+           FROM seating_plans JOIN classes ON classes.id=seating_plans.class_id
+           WHERE seating_plans.id=? AND seating_plans.school_id=?""",
+        (plan_id, school_id),
+    ).fetchone()
+    if plan is None:
+        abort(404)
+    role = g.user["role"]
+    if role == "administrator":
+        pass
+    elif plan["status"] != "published":
+        abort(404)
+    elif role == "teacher":
+        permitted = db.execute("SELECT 1 FROM teacher_assignments WHERE school_id=? AND class_id=? AND teacher_id=?", (school_id, plan["class_id"], g.user["id"])).fetchone()
+        if permitted is None:
+            abort(404)
+    elif role == "parent":
+        permitted = db.execute(
+            """SELECT 1 FROM student_guardians JOIN students ON students.id=student_guardians.student_id
+               WHERE student_guardians.parent_id=? AND student_guardians.school_id=? AND students.class_id=? LIMIT 1""",
+            (g.user["id"], school_id, plan["class_id"]),
+        ).fetchone()
+        if permitted is None:
+            abort(404)
+    else:
+        abort(404)
+    seats = db.execute(
+        """SELECT seating_assignments.row_number, seating_assignments.column_number,
+                  students.id AS student_id, students.full_name, students.admission_number
+           FROM seating_assignments JOIN students ON students.id=seating_assignments.student_id
+           WHERE seating_assignments.plan_id=? ORDER BY seating_assignments.row_number, seating_assignments.column_number""",
+        (plan_id,),
+    ).fetchall()
+    if role == "parent":
+        # Parent sees their own child's position only; all other occupied seats remain anonymous.
+        linked_ids = {row["student_id"] for row in db.execute(
+            "SELECT student_id FROM student_guardians WHERE parent_id=? AND school_id=?", (g.user["id"], school_id)
+        ).fetchall()}
+        seats = [dict(row) if row["student_id"] in linked_ids else {
+            "row_number": row["row_number"], "column_number": row["column_number"],
+            "student_id": None, "full_name": "Occupied", "admission_number": ""
+        } for row in seats]
+    return render_template("view_seating_plan.html", user=g.user, plan=plan, seats=seats)
 
 @app.route("/school-calendar", methods=["GET", "POST"])
 @login_required
