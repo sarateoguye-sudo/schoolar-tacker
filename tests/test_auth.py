@@ -342,5 +342,34 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(count, 0)
 
 
+    def test_attendance_requires_status_for_every_student(self):
+        class_id, assignment_id = self.create_assignment_fixture()
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute(
+                "INSERT INTO students (school_id, class_id, admission_number, full_name) VALUES (1, ?, 'ATT-002', 'Second Sample')",
+                (class_id,),
+            )
+            db.commit()
+        self.client.get("/dashboard")
+        with self.client.session_transaction() as session:
+            logout_token = session["_csrf_token"]
+        self.client.post("/logout", data={"_csrf_token": logout_token})
+        self.login("teacher@example.test", "another-long-test-password")
+        with self.client.session_transaction() as session:
+            token = session["_csrf_token"]
+        response = self.client.post(
+            f"/teacher/attendance/{assignment_id}",
+            data={"_csrf_token": token, "attendance_date": "2026-11-19", "status_1": "present"},
+            follow_redirects=True,
+        )
+        self.assertIn(b"Select an attendance status for every student", response.data)
+        with scholar_app.app.app_context():
+            count = scholar_app.get_db().execute(
+                "SELECT COUNT(*) FROM attendance WHERE attendance_date = '2026-11-19' AND lesson_name = 'Mathematics'"
+            ).fetchone()[0]
+        self.assertEqual(count, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
