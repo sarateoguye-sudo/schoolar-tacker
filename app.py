@@ -142,6 +142,24 @@ def init_db():
             FOREIGN KEY (school_id) REFERENCES schools(id),
             FOREIGN KEY (created_by) REFERENCES users(id)
         );
+                CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            school_id INTEGER NOT NULL,
+            student_id INTEGER,
+            attendance_date TEXT,
+            lesson_name TEXT,
+            notification_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            is_read INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (school_id) REFERENCES schools(id),
+            FOREIGN KEY (student_id) REFERENCES students(id),
+            UNIQUE (user_id, student_id, attendance_date, lesson_name, notification_type)
+        );
+        CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read, created_at);
         """
     )
     user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
@@ -334,12 +352,30 @@ def dashboard():
             (g.user["id"], g.user["school_id"]),
         ).fetchall()
     parent_children = []
+    repeated_absences = []
     if g.user["role"] == "parent" and g.user["school_id"] is not None:
         parent_children = db.execute(
             """SELECT students.id, students.full_name, students.admission_number, classes.name AS class_name, classes.stream, student_guardians.relationship FROM student_guardians JOIN students ON students.id = student_guardians.student_id LEFT JOIN classes ON classes.id = students.class_id WHERE student_guardians.parent_id = ? AND student_guardians.school_id = ? ORDER BY students.full_name""",
             (g.user["id"], g.user["school_id"]),
         ).fetchall()
-    return render_template("dashboard.html", user=g.user, stats=stats, teacher_assignments=teacher_assignments, parent_children=parent_children)
+    if g.user["role"] == "administrator" and g.user["school_id"] is not None:
+        repeated_absences = db.execute(
+            """SELECT students.id, students.full_name, students.admission_number, classes.name AS class_name,
+                      classes.stream, COUNT(DISTINCT attendance.attendance_date) AS absent_days
+               FROM attendance JOIN students ON students.id = attendance.student_id
+               LEFT JOIN classes ON classes.id = students.class_id
+               WHERE students.school_id = ? AND attendance.status = 'absent'
+                 AND attendance.attendance_date >= date('now', '-30 days')
+               GROUP BY students.id, students.full_name, students.admission_number, classes.name, classes.stream
+               HAVING COUNT(DISTINCT attendance.attendance_date) >= 3
+               ORDER BY absent_days DESC, students.full_name LIMIT 20""",
+            (g.user["school_id"],),
+        ).fetchall()
+    unread_notifications = db.execute(
+        "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0",
+        (g.user["id"],),
+    ).fetchone()[0]
+    return render_template("dashboard.html", user=g.user, stats=stats, teacher_assignments=teacher_assignments, parent_children=parent_children, repeated_absences=repeated_absences, unread_notifications=unread_notifications)
 
 
 @app.get("/admin")
@@ -576,8 +612,46 @@ def teacher_attendance(assignment_id):
                    DO UPDATE SET status = excluded.status, recorded_by = excluded.recorded_by""",
                 records,
             )
+            # Notify each active, administrator-linked guardian of recorded absences.
+            # A database uniqueness rule prevents duplicate alerts on repeat submissions.
+            for student_id, _class_id, recorded_date, lesson_name, status, _recorder_id in records:
+                student = db.execute(
+                    "SELECT full_name, school_id FROM students WHERE id = ? AND school_id = ?",
+                    (student_id, g.user["school_id"]),
+                ).fetchone()
+                if student is None:
+                    continue
+                guardians = db.execute(
+                    """SELECT users.id FROM student_guardians
+                       JOIN users ON users.id = student_guardians.parent_id
+                       WHERE student_guardians.student_id = ? AND student_guardians.school_id = ?
+                         AND users.role = 'parent' AND users.is_active = 1 AND users.school_id = ?""",
+                    (student_id, g.user["school_id"], g.user["school_id"]),
+                ).fetchall()
+                for guardian in guardians:
+                    if status == "absent":
+                        db.execute(
+                            """INSERT INTO notifications
+                               (user_id, school_id, student_id, attendance_date, lesson_name,
+                                notification_type, title, message)
+                               VALUES (?, ?, ?, ?, ?, 'attendance_absence', 'Student marked absent', ?)
+                               ON CONFLICT(user_id, student_id, attendance_date, lesson_name, notification_type)
+                               DO UPDATE SET title = excluded.title, message = excluded.message,
+                                             is_read = 0, created_at = CURRENT_TIMESTAMP""",
+                            (guardian["id"], g.user["school_id"], student_id, recorded_date, lesson_name,
+                             f"{student['full_name']} was marked absent for {lesson_name} on {recorded_date}. Contact the school if you believe this is incorrect."),
+                        )
+                    else:
+                        db.execute(
+                            """UPDATE notifications SET title = 'Attendance record updated',
+                                      message = ?, is_read = 1, created_at = CURRENT_TIMESTAMP
+                               WHERE user_id = ? AND student_id = ? AND attendance_date = ?
+                                 AND lesson_name = ? AND notification_type = 'attendance_absence'""",
+                            (f"The attendance record for {student['full_name']} on {recorded_date} ({lesson_name}) was updated to {status.title()}. This replaces an earlier absence alert.",
+                             guardian["id"], student_id, recorded_date, lesson_name),
+                        )
             db.commit()
-            flash("Attendance saved for the assigned subject and class.", "success")
+            flash("Attendance saved. Linked parents have been notified of any absences.", "success")
         except sqlite3.IntegrityError:
             db.rollback()
             flash("Attendance could not be saved. Check the class records and try again.", "error")
@@ -629,6 +703,34 @@ def attendance_reports():
     for row in records:
         if row["status"] in summary: summary[row["status"]] += 1
     return render_template("attendance_reports.html", user=g.user, records=records, summary=summary, start_date=start_date, end_date=end_date)
+
+@app.get("/notifications")
+@login_required
+def notifications_inbox():
+    """Show only notifications belonging to the signed-in account."""
+    rows = get_db().execute(
+        """SELECT id, title, message, is_read, created_at
+           FROM notifications WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 100""",
+        (g.user["id"],),
+    ).fetchall()
+    return render_template("notifications.html", user=g.user, notifications=rows)
+
+
+@app.post("/notifications/<int:notification_id>/read")
+@login_required
+def mark_notification_read(notification_id):
+    """Mark one of the signed-in user's notifications as read."""
+    db = get_db()
+    cursor = db.execute(
+        "UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?",
+        (notification_id, g.user["id"]),
+    )
+    db.commit()
+    if cursor.rowcount == 0:
+        abort(404)
+    flash("Notification marked as read.", "success")
+    return redirect(url_for("notifications_inbox"))
+
 
 @app.get("/parent/children/<int:student_id>/attendance")
 @roles_required("parent")
