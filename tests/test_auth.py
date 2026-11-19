@@ -738,7 +738,10 @@ class AuthenticationTests(unittest.TestCase):
                 (other_id, class_id),
             )
             db.commit()
-        self.client.get("/dashboard")\n        with self.client.session_transaction() as session:\n            logout_token = session["_csrf_token"]\n        self.client.post("/logout", data={"_csrf_token": logout_token})
+        self.client.get("/dashboard")
+        with self.client.session_transaction() as session:
+            logout_token = session["_csrf_token"]
+        self.client.post("/logout", data={"_csrf_token": logout_token})
         self.login("teacher@example.test", "another-long-test-password")
         response = self.client.get(f"/academic-reports?assignment_id={assignment_id}")
         self.assertEqual(response.status_code, 404)
