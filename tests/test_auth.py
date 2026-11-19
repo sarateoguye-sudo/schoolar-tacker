@@ -731,17 +731,16 @@ class AuthenticationTests(unittest.TestCase):
                 (generate_password_hash("a-different-test-password"),),
             )
             other_id = db.execute("SELECT id FROM users WHERE email='other@example.test'").fetchone()["id"]
-            db.execute(
+            other_assignment = db.execute(
                 "INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_name) VALUES (1, ?, ?, 'Science')",
                 (other_id, class_id),
             )
+            other_assignment_id = other_assignment.lastrowid
             db.commit()
-        self.client.get("/dashboard")
         with self.client.session_transaction() as session:
-            logout_token = session["_csrf_token"]
-        self.client.post("/logout", data={"_csrf_token": logout_token})
+            session.clear()
         self.login("teacher@example.test", "another-long-test-password")
-        response = self.client.get(f"/academic-reports?assignment_id={assignment_id}")
+        response = self.client.get(f"/academic-reports?assignment_id={other_assignment_id}")
         self.assertEqual(response.status_code, 404)
 
 if __name__ == "__main__":
