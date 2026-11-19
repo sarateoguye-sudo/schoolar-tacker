@@ -536,6 +536,40 @@ def teacher_attendance(assignment_id):
     return render_template("attendance_register.html", assignment=assignment, students=students, attendance_date=attendance_date)
 
 
+@app.get("/attendance/reports")
+@roles_required("administrator", "teacher")
+def attendance_reports():
+    """Show attendance history for the signed-in user."""
+    from datetime import date, timedelta
+    db = get_db()
+    today = date.today()
+    start_date = request.args.get("start_date", (today - timedelta(days=6)).isoformat())
+    end_date = request.args.get("end_date", today.isoformat())
+    try:
+        parsed_start, parsed_end = date.fromisoformat(start_date), date.fromisoformat(end_date)
+    except (TypeError, ValueError):
+        abort(400, description="Choose valid start and end dates.")
+    if parsed_start > parsed_end:
+        abort(400, description="The start date cannot be after the end date.")
+    if (parsed_end - parsed_start).days > 366:
+        abort(400, description="Choose a date range of one year or less.")
+    conditions = ["attendance.attendance_date BETWEEN ? AND ?"]
+    params = [start_date, end_date]
+    if g.user["role"] == "administrator":
+        if g.user["school_id"] is None: abort(403)
+        conditions.append("students.school_id = ?")
+        params.append(g.user["school_id"])
+    else:
+        if g.user["school_id"] is None: abort(403)
+        conditions.extend(["attendance.recorded_by = ?", "attendance.class_id IN (SELECT class_id FROM teacher_assignments WHERE teacher_id = ? AND school_id = ?)", "students.school_id = ?"])
+        params.extend([g.user["id"], g.user["id"], g.user["school_id"], g.user["school_id"]])
+    sql = """SELECT attendance.attendance_date, attendance.lesson_name, attendance.status, students.full_name AS student_name, students.admission_number, classes.name AS class_name, classes.stream, users.full_name AS recorded_by_name FROM attendance JOIN students ON students.id = attendance.student_id JOIN classes ON classes.id = attendance.class_id LEFT JOIN users ON users.id = attendance.recorded_by WHERE """ + " AND ".join(conditions) + " ORDER BY attendance.attendance_date DESC, classes.name, students.full_name LIMIT 1000"
+    records = db.execute(sql, params).fetchall()
+    summary = {status: 0 for status in ("present", "absent", "late", "excused")}
+    for row in records:
+        if row["status"] in summary: summary[row["status"]] += 1
+    return render_template("attendance_reports.html", user=g.user, records=records, summary=summary, start_date=start_date, end_date=end_date)
+
 @app.route("/change-password", methods=["GET", "POST"])
 @login_required
 def change_password():
