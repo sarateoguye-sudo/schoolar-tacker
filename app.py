@@ -8,6 +8,7 @@ import os
 import sqlite3
 from pathlib import Path
 
+import click
 from flask import Flask, g, render_template
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -36,6 +37,7 @@ def close_db(_error=None):
 
 def init_db():
     """Create the initial database tables if they do not exist."""
+    DATABASE.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(app.config["DATABASE"])
     db.execute("PRAGMA foreign_keys = ON")
     db.executescript(
@@ -46,21 +48,17 @@ def init_db():
             county TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
-
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             school_id INTEGER,
             full_name TEXT NOT NULL,
             email TEXT NOT NULL UNIQUE,
-            role TEXT NOT NULL CHECK (
-                role IN ('administrator', 'teacher', 'parent', 'student')
-            ),
+            role TEXT NOT NULL CHECK (role IN ('administrator', 'teacher', 'parent', 'student')),
             password_hash TEXT NOT NULL,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (school_id) REFERENCES schools(id)
         );
-
         CREATE TABLE IF NOT EXISTS classes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             school_id INTEGER NOT NULL,
@@ -70,7 +68,6 @@ def init_db():
             FOREIGN KEY (school_id) REFERENCES schools(id),
             UNIQUE (school_id, name, stream, academic_year)
         );
-
         CREATE TABLE IF NOT EXISTS students (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             school_id INTEGER NOT NULL,
@@ -83,16 +80,13 @@ def init_db():
             FOREIGN KEY (class_id) REFERENCES classes(id),
             UNIQUE (school_id, admission_number)
         );
-
         CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER NOT NULL,
             class_id INTEGER NOT NULL,
             attendance_date TEXT NOT NULL,
             lesson_name TEXT NOT NULL DEFAULT 'Daily register',
-            status TEXT NOT NULL CHECK (
-                status IN ('present', 'absent', 'late', 'excused')
-            ),
+            status TEXT NOT NULL CHECK (status IN ('present', 'absent', 'late', 'excused')),
             recorded_by INTEGER,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (student_id) REFERENCES students(id),
@@ -100,7 +94,6 @@ def init_db():
             FOREIGN KEY (recorded_by) REFERENCES users(id),
             UNIQUE (student_id, attendance_date, lesson_name)
         );
-
         CREATE TABLE IF NOT EXISTS school_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             school_id INTEGER NOT NULL,
@@ -116,6 +109,13 @@ def init_db():
     )
     db.commit()
     db.close()
+
+
+@app.cli.command("init-db")
+def init_db_command():
+    """Initialise the local development database."""
+    init_db()
+    click.echo("Scholar Tracker database initialised.")
 
 
 @app.get("/")
@@ -139,5 +139,5 @@ def health():
 
 if __name__ == "__main__":
     init_db()
-    # Debug is enabled only for local development. Never deploy with debug=True.
+    # Debug is disabled. Use a production WSGI server for deployment.
     app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "5000")), debug=False)
