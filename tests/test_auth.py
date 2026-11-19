@@ -82,6 +82,7 @@ class AuthenticationTests(unittest.TestCase):
 
     def test_logout_clears_session(self):
         self.login("admin@example.test", "a-long-test-password")
+        self.client.get("/dashboard")  # Login rotates the CSRF token.
         with self.client.session_transaction() as session:
             token = session["_csrf_token"]
         response = self.client.post("/logout", data={"_csrf_token": token})
@@ -204,6 +205,7 @@ class AuthenticationTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 302)
         self.assertIn("/change-password", response.headers["Location"])
+        teacher_client.get("/change-password")  # Create a fresh CSRF token after login.
         self.assertEqual(teacher_client.get("/dashboard").status_code, 302)
         self.assertIn("/change-password", teacher_client.get("/dashboard").headers["Location"])
         with teacher_client.session_transaction() as session:
@@ -356,6 +358,7 @@ class AuthenticationTests(unittest.TestCase):
             logout_token = session["_csrf_token"]
         self.client.post("/logout", data={"_csrf_token": logout_token})
         self.login("teacher@example.test", "another-long-test-password")
+        self.client.get("/dashboard")  # Login rotates the CSRF token.
         with self.client.session_transaction() as session:
             token = session["_csrf_token"]
         response = self.client.post(
@@ -678,7 +681,7 @@ class AuthenticationTests(unittest.TestCase):
             )
             entry_id = cursor.lastrowid
             db.commit()
-        self.login("admin@example.test", "a-long-test-password")
+        # create_assignment_fixture already signs in the administrator.
         self.client.get("/admin/timetable")
         with self.client.session_transaction() as session:
             token = session["_csrf_token"]
