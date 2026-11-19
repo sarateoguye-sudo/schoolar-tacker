@@ -457,9 +457,15 @@ def school_calendar():
         next_month = month_date.replace(year=month_date.year + 1, month=1, day=1)
     else:
         next_month = month_date.replace(month=month_date.month + 1, day=1)
+    audience_conditions = ["audience = 'Everyone'"]
+    if g.user["role"] in ("administrator", "teacher"):
+        audience_conditions.append("audience = 'Staff'")
+    if g.user["role"] in ("parent", "student"):
+        audience_conditions.append("audience = 'Parents and students'")
     events = db.execute(
         """SELECT id, title, description, event_date, event_type, start_time, end_time, audience
            FROM school_events WHERE school_id = ? AND event_date >= ? AND event_date < ?
+             AND (""" + " OR ".join(audience_conditions) + """)
            ORDER BY event_date, COALESCE(start_time, '00:00'), title""",
         (g.user["school_id"], month_start, next_month.isoformat()),
     ).fetchall()
