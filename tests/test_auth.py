@@ -279,10 +279,8 @@ class AuthenticationTests(unittest.TestCase):
 
     def test_teacher_can_mark_assigned_class_attendance(self):
         _class_id, assignment_id = self.create_assignment_fixture()
-        self.client.get("/dashboard")
         with self.client.session_transaction() as session:
-            logout_token = session["_csrf_token"]
-        self.client.post("/logout", data={"_csrf_token": logout_token})
+            session.clear()
         self.login("teacher@example.test", "another-long-test-password")
         response = self.client.get(f"/teacher/attendance/{assignment_id}")
         self.assertEqual(response.status_code, 200)
