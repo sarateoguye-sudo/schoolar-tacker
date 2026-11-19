@@ -183,5 +183,63 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(count, 1)
 
 
+    def test_new_teacher_must_change_temporary_password(self):
+        self.login("admin@example.test", "a-long-test-password")
+        response = self.post_school_data({
+            "action": "create_teacher",
+            "teacher_name": "New Teacher",
+            "teacher_email": "new.teacher@example.test",
+            "teacher_password": "temporary-password-123",
+        })
+        self.assertEqual(response.status_code, 200)
+        teacher_client = scholar_app.app.test_client()
+        login_page = teacher_client.get("/login")
+        self.assertEqual(login_page.status_code, 200)
+        with teacher_client.session_transaction() as session:
+            csrf = session["_csrf_token"]
+        response = teacher_client.post("/login", data={
+            "_csrf_token": csrf,
+            "email": "new.teacher@example.test",
+            "password": "temporary-password-123",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/change-password", response.headers["Location"])
+        self.assertEqual(teacher_client.get("/dashboard").status_code, 302)
+        self.assertIn("/change-password", teacher_client.get("/dashboard").headers["Location"])
+        with teacher_client.session_transaction() as session:
+            csrf = session["_csrf_token"]
+        response = teacher_client.post("/change-password", data={
+            "_csrf_token": csrf,
+            "current_password": "temporary-password-123",
+            "new_password": "my-new-strong-password-456",
+            "confirm_password": "my-new-strong-password-456",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/dashboard", response.headers["Location"])
+        self.assertEqual(teacher_client.get("/dashboard").status_code, 200)
+
+    def test_password_change_rejects_mismatched_confirmation(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute(
+                "INSERT INTO users (school_id, full_name, email, role, password_hash, must_change_password) VALUES (1, 'Forced Change', 'forced@example.test', 'teacher', ?, 1)",
+                (generate_password_hash("temporary-password-123"),),
+            )
+            db.commit()
+        response = self.login("forced@example.test", "temporary-password-123")
+        self.assertIn("/change-password", response.headers["Location"])
+        self.client.get("/change-password")
+        with self.client.session_transaction() as session:
+            token = session["_csrf_token"]
+        response = self.client.post("/change-password", data={
+            "_csrf_token": token,
+            "current_password": "temporary-password-123",
+            "new_password": "my-new-strong-password-456",
+            "confirm_password": "different-password-789",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"do not match", response.data)
+
+
 if __name__ == "__main__":
     unittest.main()
