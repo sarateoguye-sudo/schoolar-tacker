@@ -310,7 +310,10 @@ class AuthenticationTests(unittest.TestCase):
                 (generate_password_hash("other-teacher-password-123"),),
             )
             db.commit()
-        self.client.post("/logout", data={"_csrf_token": self.csrf()})
+        self.client.get("/dashboard")
+        with self.client.session_transaction() as session:
+            logout_token = session["_csrf_token"]
+        self.client.post("/logout", data={"_csrf_token": logout_token})
         self.login("other@example.test", "other-teacher-password-123")
         self.assertEqual(self.client.get(f"/teacher/attendance/{assignment_id}").status_code, 404)
 
