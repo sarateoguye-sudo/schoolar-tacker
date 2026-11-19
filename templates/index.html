@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Scholar Tracker school management project.">
+  <title>Scholar Tracker | School Management</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Scholar Tracker home">
+      <span class="brand-mark">ST</span>
+      <span>Scholar Tracker</span>
+    </a>
+    <span class="status">DEVELOPMENT VERSION</span>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <p class="eyebrow">SCHOOL MANAGEMENT • KENYA</p>
+      <h1>Better school records.<br><span>Stronger school–home connections.</span></h1>
+      <p class="intro">A planned digital workspace for school administrators, teachers and verified parents to manage attendance, student records and school activities.</p>
+      <div class="hero-actions">
+        <a class="primary-button" href="#modules">Explore modules</a>
+        <a class="secondary-button" href="https://github.com/sarateoguye-sudo/schoolar-tacker">View source code ↗</a>
+      </div>
+      <p class="notice"><strong>Prototype:</strong> Sign-in and permissions are not built yet. Do not enter real student information.</p>
+    </section>
+
+    <section class="stats" aria-label="Current database counts">
+      <article class="stat-card"><span>Schools</span><strong>{{ stats.schools }}</strong></article>
+      <article class="stat-card"><span>Active students</span><strong>{{ stats.students }}</strong></article>
+      <article class="stat-card"><span>Classes</span><strong>{{ stats.classes }}</strong></article>
+      <article class="stat-card"><span>School events</span><strong>{{ stats.events }}</strong></article>
+    </section>
+
+    <section id="modules" class="modules">
+      <div class="section-heading">
+        <p class="eyebrow">BUILDING IN PHASES</p>
+        <h2>Core modules</h2>
+        <p>These are the main areas planned for the first development milestones.</p>
+      </div>
+      <div class="module-grid">
+        <article class="module-card"><span class="icon">✓</span><h3>Attendance</h3><p>Record attendance by class, date and lesson, with an auditable history.</p><span class="tag">Planned</span></article>
+        <article class="module-card"><span class="icon">▦</span><h3>Students & classes</h3><p>Organise student profiles, admission numbers, classes and streams.</p><span class="tag">Database foundation</span></article>
+        <article class="module-card"><span class="icon">⌂</span><h3>Parents' portal</h3><p>Give verified guardians access only to their linked children's information.</p><span class="tag">Planned</span></article>
+        <article class="module-card"><span class="icon">▣</span><h3>School calendar</h3><p>Publish term dates, examinations, meetings and school events.</p><span class="tag">Database foundation</span></article>
+        <article class="module-card"><span class="icon">▤</span><h3>Seating plans</h3><p>Manage classroom layouts and publish approved seating arrangements.</p><span class="tag">Planned</span></article>
+        <article class="module-card"><span class="icon">🔒</span><h3>Security & privacy</h3><p>Build authentication, role permissions, school data isolation and audit logs before real use.</p><span class="tag">First priority</span></article>
+      </div>
+    </section>
+  </main>
+
+  <footer><span>Scholar Tracker</span><span>Early development • Protect student privacy</span></footer>
+</body>
+</html>
