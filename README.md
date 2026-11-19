@@ -28,6 +28,7 @@ The full roadmap is in [docs/MASTER_REQUIREMENTS.md](docs/MASTER_REQUIREMENTS.md
 - Teacher dashboard that lists only the signed-in teacher's assignments
 - Attendance register restricted to the teacher's own assigned class and subject
 - Attendance statuses: Present, Absent, Late and Excused; all active students must receive a status before saving
+- Attendance history/report page with date filters, status totals, school-scoped administrator view, and teacher-limited records
 - Automated tests for authentication, role restrictions, school records, subject assignments and attendance boundaries
 
 **Not implemented yet:** password reset for forgotten passwords, multi-factor authentication, login throttling, full school-level data isolation across every operation, parent/child verification, attendance audit history and correction approvals, repeated-subject lesson periods, edit/deactivate approval flows, complete school data isolation across every operation, audit logs, and production deployment hardening. Passing the starter tests does not mean the entire app is secure.
