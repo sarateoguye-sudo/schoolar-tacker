@@ -413,6 +413,44 @@ def school_calendar():
     if request.method == "POST":
         if g.user["role"] != "administrator":
             abort(403)
+        action = request.form.get("action", "create")
+        if action in {"delete_event", "update_event"}:
+            event_id_raw = request.form.get("event_id", "").strip()
+            if not event_id_raw.isdigit():
+                abort(400, description="Invalid calendar event.")
+            event = db.execute("SELECT id FROM school_events WHERE id = ? AND school_id = ?", (int(event_id_raw), g.user["school_id"])).fetchone()
+            if event is None:
+                abort(404)
+            if action == "delete_event":
+                db.execute("DELETE FROM school_events WHERE id = ? AND school_id = ?", (int(event_id_raw), g.user["school_id"]))
+                db.commit()
+                flash("Calendar event deleted.", "success")
+                return redirect(url_for("school_calendar"))
+            title = request.form.get("title", "").strip()
+            description = request.form.get("description", "").strip()
+            event_date = request.form.get("event_date", "").strip()
+            event_type = request.form.get("event_type", "School event").strip()
+            start_time = request.form.get("start_time", "").strip() or None
+            end_time = request.form.get("end_time", "").strip() or None
+            audience = request.form.get("audience", "Everyone").strip()
+            allowed_types = {"Term date", "Exam", "Holiday", "Meeting", "Sports", "School event"}
+            allowed_audiences = {"Everyone", "Staff", "Parents and students"}
+            from datetime import date as _date, time as _time
+            try:
+                _date.fromisoformat(event_date)
+                if start_time: _time.fromisoformat(start_time)
+                if end_time: _time.fromisoformat(end_time)
+            except ValueError:
+                flash("Enter a valid event date and time.", "error")
+                return redirect(url_for("school_calendar"))
+            if not title or len(title) > 120 or len(description) > 1000 or event_type not in allowed_types or audience not in allowed_audiences or ((start_time is None) != (end_time is None)) or (start_time and end_time and start_time >= end_time):
+                flash("Check the event title, description, type, audience and time range.", "error")
+                return redirect(url_for("school_calendar"))
+            db.execute("""UPDATE school_events SET title=?, description=?, event_date=?, event_type=?, start_time=?, end_time=?, audience=? WHERE id=? AND school_id=?""",
+                       (title, description, event_date, event_type, start_time, end_time, audience, int(event_id_raw), g.user["school_id"]))
+            db.commit()
+            flash("Calendar event updated.", "success")
+            return redirect(url_for("school_calendar", month=event_date[:7]))
         title = request.form.get("title", "").strip()
         description = request.form.get("description", "").strip()
         event_date = request.form.get("event_date", "").strip()
@@ -501,6 +539,27 @@ def manage_timetable():
         abort(403)
     db = get_db()
     if request.method == "POST":
+        action = request.form.get("action", "create")
+        if action in {"delete_period", "update_period"}:
+            entry_raw = request.form.get("entry_id", "").strip()
+            if not entry_raw.isdigit():
+                abort(400, description="Invalid timetable period.")
+            existing = db.execute("""SELECT timetable_entries.id, timetable_entries.assignment_id, timetable_entries.weekday,
+                                    timetable_entries.start_time, timetable_entries.end_time, timetable_entries.room,
+                                    teacher_assignments.teacher_id, teacher_assignments.class_id
+                                    FROM timetable_entries JOIN teacher_assignments ON teacher_assignments.id=timetable_entries.assignment_id
+                                    WHERE timetable_entries.id=? AND timetable_entries.school_id=? AND teacher_assignments.school_id=?""",
+                                  (int(entry_raw), school_id, school_id)).fetchone()
+            if existing is None:
+                abort(404)
+            if action == "delete_period":
+                db.execute("DELETE FROM timetable_entries WHERE id=? AND school_id=?", (int(entry_raw), school_id))
+                db.commit()
+                flash("Timetable period deleted.", "success")
+                return redirect(url_for("manage_timetable"))
+            assignment_raw = request.form.get("assignment_id", "")
+        else:
+            entry_raw = ""
         assignment_raw = request.form.get("assignment_id", "")
         weekday_raw = request.form.get("weekday", "")
         start_time = request.form.get("start_time", "")
@@ -528,21 +587,29 @@ def manage_timetable():
                FROM timetable_entries JOIN teacher_assignments ON teacher_assignments.id = timetable_entries.assignment_id
                WHERE timetable_entries.school_id = ? AND timetable_entries.weekday = ?
                  AND timetable_entries.start_time < ? AND timetable_entries.end_time > ?
-                 AND (teacher_assignments.teacher_id = ? OR teacher_assignments.class_id = ?)""",
-            (school_id, weekday, end_time, start_time, assignment["teacher_id"], assignment["class_id"]),
+                 AND (teacher_assignments.teacher_id = ? OR teacher_assignments.class_id = ?)
+                 AND timetable_entries.id != COALESCE(?, -1)""",
+            (school_id, weekday, end_time, start_time, assignment["teacher_id"], assignment["class_id"],
+             int(entry_raw) if action == "update_period" and entry_raw.isdigit() else None),
         ).fetchone()
         if overlaps:
             flash("Timetable conflict: this teacher or class already has a lesson during that time.", "error")
             return redirect(url_for("manage_timetable"))
         try:
-            db.execute(
-                """INSERT INTO timetable_entries
-                   (school_id, assignment_id, weekday, start_time, end_time, room, created_by)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (school_id, assignment_id, weekday, start_time, end_time, room, g.user["id"]),
-            )
+            if action == "update_period":
+                db.execute("""UPDATE timetable_entries SET assignment_id=?, weekday=?, start_time=?, end_time=?, room=?
+                              WHERE id=? AND school_id=?""",
+                           (assignment_id, weekday, start_time, end_time, room, int(entry_raw), school_id))
+                flash("Timetable period updated.", "success")
+            else:
+                db.execute(
+                    """INSERT INTO timetable_entries
+                       (school_id, assignment_id, weekday, start_time, end_time, room, created_by)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (school_id, assignment_id, weekday, start_time, end_time, room, g.user["id"]),
+                )
+                flash("Lesson added to the timetable.", "success")
             db.commit()
-            flash("Lesson added to the timetable.", "success")
         except sqlite3.IntegrityError:
             db.rollback()
             flash("That exact lesson period is already on the timetable.", "error")
