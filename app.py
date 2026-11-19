@@ -65,6 +65,7 @@ def init_db():
             email TEXT NOT NULL UNIQUE COLLATE NOCASE,
             role TEXT NOT NULL CHECK (role IN ('administrator', 'teacher', 'parent', 'student')),
             password_hash TEXT NOT NULL,
+            must_change_password INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (school_id) REFERENCES schools(id)
@@ -117,6 +118,9 @@ def init_db():
         );
         """
     )
+    user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
+    if "must_change_password" not in user_columns:
+        db.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
     db.commit()
     db.close()
 
@@ -156,6 +160,8 @@ def login_required(view):
         if not g.get("user"):
             flash("Please sign in to continue.", "info")
             return redirect(url_for("login"))
+        if g.user["must_change_password"] and request.endpoint not in {"change_password", "logout"}:
+            return redirect(url_for("change_password"))
         return view(*args, **kwargs)
     return wrapped
 
@@ -178,7 +184,7 @@ def load_logged_in_user():
     g.user = None
     if user_id is not None:
         g.user = get_db().execute(
-            "SELECT id, school_id, full_name, email, role FROM users WHERE id = ? AND is_active = 1",
+            "SELECT id, school_id, full_name, email, role, must_change_password FROM users WHERE id = ? AND is_active = 1",
             (user_id,),
         ).fetchone()
         if g.user is None:
@@ -256,7 +262,7 @@ def login():
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         user = get_db().execute(
-            "SELECT id, password_hash, is_active FROM users WHERE email = ? COLLATE NOCASE",
+            "SELECT id, password_hash, is_active, must_change_password FROM users WHERE email = ? COLLATE NOCASE",
             (email,),
         ).fetchone()
         if user and user["is_active"] and check_password_hash(user["password_hash"], password):
@@ -264,6 +270,8 @@ def login():
             session["user_id"] = user["id"]
             session.permanent = True
             flash("You are signed in.", "success")
+            if user["must_change_password"]:
+                return redirect(url_for("change_password"))
             return redirect(url_for("dashboard"))
         flash("Email or password is incorrect, or the account is inactive.", "error")
     return render_template("login.html")
@@ -369,7 +377,7 @@ def school_data():
             else:
                 try:
                     db.execute(
-                        "INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (?, ?, ?, 'teacher', ?)",
+                        "INSERT INTO users (school_id, full_name, email, role, password_hash, must_change_password) VALUES (?, ?, ?, 'teacher', ?, 1)",
                         (school_id, full_name, email, generate_password_hash(password)),
                     )
                     db.commit()
@@ -399,6 +407,37 @@ def school_data():
     ).fetchall()
     school = db.execute("SELECT name, county FROM schools WHERE id = ?", (school_id,)).fetchone()
     return render_template("school_data.html", user=g.user, school=school, classes=classes, students=students, teachers=teachers)
+
+
+@app.route("/change-password", methods=["GET", "POST"])
+@login_required
+def change_password():
+    """Require newly created teacher accounts to replace their temporary password."""
+    if request.method == "POST":
+        current_password = request.form.get("current_password", "")
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
+        row = get_db().execute(
+            "SELECT password_hash FROM users WHERE id = ?",
+            (g.user["id"],),
+        ).fetchone()
+        if not row or not check_password_hash(row["password_hash"], current_password):
+            flash("Current password is incorrect.", "error")
+        elif len(new_password) < 12:
+            flash("Your new password must be at least 12 characters.", "error")
+        elif new_password != confirm_password:
+            flash("The new passwords do not match.", "error")
+        elif new_password == current_password:
+            flash("Choose a new password different from the temporary password.", "error")
+        else:
+            get_db().execute(
+                "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?",
+                (generate_password_hash(new_password), g.user["id"]),
+            )
+            get_db().commit()
+            flash("Password changed successfully.", "success")
+            return redirect(url_for("dashboard"))
+    return render_template("change_password.html", user=g.user)
 
 
 @app.get("/health")
