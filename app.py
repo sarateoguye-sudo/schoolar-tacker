@@ -462,8 +462,12 @@ def login():
             flash("Email or password is incorrect, or the account is temporarily unavailable. Try again later.", "error")
             return render_template("login.html")
         user = db.execute(
-            "SELECT id, password_hash, is_active, must_change_password FROM users WHERE email = ? COLLATE NOCASE",
-            (email,),
+            """SELECT id, password_hash, is_active, must_change_password
+               FROM users
+               WHERE email = ? COLLATE NOCASE
+                  OR (phone_number = ? AND phone_verified = 1)
+               LIMIT 1""",
+            (email, email),
         ).fetchone()
         if user and user["is_active"] and check_password_hash(user["password_hash"], password):
             db.execute("DELETE FROM login_attempts WHERE attempt_key = ?", (attempt_key,))
@@ -601,8 +605,6 @@ def verify_email(token):
 @app.route("/account/verify-phone", methods=["GET", "POST"])
 @login_required
 def verify_phone():
-    if g.user["role"] != "parent":
-        abort(403)
     db = get_db()
     user = db.execute("SELECT phone_number, phone_verified FROM users WHERE id=?", (g.user["id"],)).fetchone()
     if request.method == "POST":
