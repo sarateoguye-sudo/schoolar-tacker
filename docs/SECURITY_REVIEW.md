@@ -2,71 +2,81 @@
 
 **Review date:** 2026-11-20  
 **Branch reviewed:** `scholar-tracker-rebuild`  
-**Review type:** Static code/configuration review plus GitHub Actions results. This is not an independent penetration test.
+**Latest reviewed commit:** `d694b9693c2c4a0e0e77daf9984347fa5d637ddc`  
+**Review type:** Static code/configuration review, automated tests, and staging deployment/log checks. This is not an independent penetration test.
 
 ## Decision
 
 **NO-GO for production school records. Do not merge this rebuild into `main` or deploy it to the live Render service yet.**
 
-The feature branch is substantially ahead of `main`. The current Render service is configured to deploy from `main`, and its configuration reports the free plan. The application defaults to a local SQLite file unless `SCHOLAR_TRACKER_DB` is set. Persistent storage for that database has not been verified. A deployment without a verified persistent database, backup and restore test risks losing school records.
+The latest application and security CI runs both pass, and the latest rebuild commit is live on the separate staging service. However, production still has no verified persistent database/restore plan, still uses the old startup command, and has not had provider integrations or a complete route-by-route security review verified.
 
-## Work completed in this review
+## Verified on 2026-11-20
 
-- Added a database trigger to enforce a maximum of two parent/guardian links per student, even if a future code path bypasses the administrator form.
-- Added database-level checks that guardian links reference an active student and parent in the same school and are created by an active administrator of that school.
-- Added a regression test for the database-level two-guardian limit.
-- Added a SQLite backup/restore utility that validates backups, verifies integrity, and refuses to overwrite existing backup or restore files; added fictional-record tests for successful restore and safety failures.
-- Added cross-school regression tests for teacher attendance/academic assignment access, parent access to unlinked children, calendar school separation, and student creation in another school's class.
-- Added email verification links and password-reset links with 30-minute expiry; reset links are invalidated after a password reset without exposing the password hash in the token.
-- Added parent SMS verification code flow with 10-minute expiry and a five-attempt limit, using Twilio only when credentials are configured.
-- Added optional Google OAuth sign-in for existing active accounts with a previously verified local email; it does not auto-create accounts.
-- Parent-child linking now requires a verified email address or phone number, in addition to school/role checks and the maximum-two-guardians database trigger.
-- Created a separate Render staging service on the rebuild branch. It starts successfully with the guarded startup script and uses an isolated temporary SQLite path for fictional data only.
-- Changed production configuration to refuse startup without a configured `SECRET_KEY`, and to default session cookies to Secure when the app detects a production environment.
-- Confirmed GitHub Actions passed on earlier commits. The latest commit must pass its own checks before it can be considered verified.
+- Application tests passed on latest commit: [GitHub Actions run #193](https://github.com/sarateoguye-sudo/schoolar-tacker/actions/runs/44724145369).
+- Security checks passed on latest commit: [GitHub Actions run #81](https://github.com/sarateoguye-sudo/schoolar-tacker/actions/runs/44724145380).
+- Latest staging deploy `dep-dc02h3uqo8tc73fgtoj0` completed successfully with commit `d694b9693c2c4a0e0e77daf9984347fa5d637ddc`.
+- Render staging logs confirm `bash render-start.sh` ran, the database schema initialized, Gunicorn started, and Render's `HEAD /` and `GET /` checks returned HTTP 200.
+- Staging uses `/tmp/scholar_tracker_staging.sqlite3`; this storage is ephemeral and is only for fictional test data.
+- The live production service was not modified and remains on `main`.
 
-## Findings and release gates
+## Work implemented in the rebuild
 
-### P0 — Persistent production storage and recovery not verified
+- Database-level limit of two parent/guardian links per student, with same-school, active-account, and administrator checks.
+- SQLite backup/restore utility with integrity checks and tests using fictional data.
+- Authentication improvements: email verification, password reset with expiring/single-use links, optional Google sign-in for existing verified accounts, Twilio SMS verification, verified-phone sign-in, duplicate verified phone prevention, and database-backed login throttling.
+- Parent-child linking requires a verified contact method and server-side authorization checks.
+- School-isolation regression tests cover selected attendance and academic assignments, unlinked parent access, calendar visibility, class/school boundaries, published seating plans, teacher timetables, and per-user notifications.
+- Guarded startup script `render-start.sh` requires `SECRET_KEY` and `SCHOLAR_TRACKER_DB`, initializes the database, then starts Gunicorn.
+- Production configuration refuses to start without a configured `SECRET_KEY` and defaults session cookies to Secure in production.
 
-The app uses SQLite. The live Render service is on the free plan, no Render PostgreSQL database is configured, and a persistent disk has not been verified. A backup/restore utility and local fictional-data tests have been added, but no production backup has been restored and no persistent Render storage has been established. A separate staging service is live, but it deliberately uses `/tmp/scholar_tracker_staging.sqlite3`, which is ephemeral and must contain fictional data only. Do not enter real student records or deploy the rebuild until a persistent production storage plan exists and an actual backup-and-restore test succeeds.
+## Remaining release blockers
 
-### P0 — The current Render start command does not initialise the rebuild database
+### P0 — Persistent production storage and restore are not verified
 
-The rebuild calls `init_db()` when run directly or through the Flask CLI, but not when Gunicorn imports `app:app`. The current live Render start command is `gunicorn --bind 0.0.0.0:$PORT app:app`. I added `render-start.sh`, which fails unless `SECRET_KEY` and `SCHOLAR_TRACKER_DB` are configured, initializes the schema, then starts Gunicorn. The live Render service has not been changed to use this script; test it against the selected persistent database before deployment.
+The live service uses SQLite on Render's free plan. No persistent disk or managed PostgreSQL database is configured. The backup utility's local tests do not prove that production data can be backed up and restored. Do not store real student records until a supported persistent storage plan is approved, configured, and verified with a successful restore test.
 
-### P1 — Login throttling added, but production behavior still needs verification
+### P0 — Production still uses the old startup command
 
-The rebuild now tracks failed login attempts in the database and temporarily blocks repeated guesses for the same keyed email/client-address pair after 10 failures in a 15-minute window. A regression test has been added. Before production, verify the latest test run, confirm that the database is persistent and shared by all application workers, and confirm that the client address used behind Render's proxy is trustworthy.
+The live Render service still starts with:
 
-### P1 — Contact verification code exists but provider setup and guardian identity review remain
+```bash
+gunicorn --bind 0.0.0.0:$PORT app:app
+```
 
-The app now requires a verified email or phone contact before a parent can be linked to a student. Email verification and password recovery depend on SMTP configuration; phone verification depends on Twilio credentials; Google sign-in depends on Google OAuth credentials. None of those provider credentials has been configured or end-to-end tested in staging yet. Verifying a contact channel proves control of that email/phone, not legal guardian authority, so the school must still confirm the guardian's authority through an approved process before granting access.
+It has not been switched to `bash render-start.sh`. The staging service proves the guarded script can start with staging configuration, but production must first have a verified persistent database path and stable secret. The available Render connector does not expose a safe combined action to configure a persistent disk and change the live startup command. Production was deliberately left unchanged.
 
-### P1 — School data isolation needs broader verification
+### P1 — Email, SMS and Google provider flows are not end-to-end verified
 
-The current tests now cover selected cross-school boundaries for attendance assignments, academic assignments, unlinked parent access, calendar visibility, and student creation. They do not yet cover every role, seating plans, timetables, notifications, parent-link mutations, or every create/update/delete path. Continue expanding the matrix before production. Database relationships should enforce school consistency wherever feasible.
+The application code expects SMTP variables (`SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, optional `SMTP_USERNAME`/`SMTP_PASSWORD`), Twilio variables (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`), and Google OAuth credentials (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`). They have not been configured and tested end-to-end. Do not paste secret values into source code, issues, or chat; configure them as private service environment variables after choosing the provider accounts.
 
-### P1 — Provider and deployment configuration must be checked before release
+### P1 — Security review is not yet comprehensive
 
-The staging service uses the rebuild branch and guarded startup script and has started successfully. SMTP, Twilio, and Google OAuth provider credentials have not been configured. The live Render service has not been changed and still runs `main` with the old startup command. Before deploying, choose and configure paid persistent storage or an appropriate managed database, configure the live start command and private secrets, test provider delivery, and rehearse migration and rollback against a sanitized copy of the database.
+Passing CI validates the checks currently written, not every route or attack scenario. Expand and review the authorization matrix for every role and every read/create/update/delete route, verify school isolation and parent-link changes, review session/CSRF/security headers and uploaded files, check dependency advisories, and test login-throttle behavior behind Render's proxy. The current test coverage is improved but is not an independent penetration test.
 
-### P2 — Important planned capabilities remain unfinished
+### P1 — Guardian authorization and privacy operations need school-level validation
 
-Google sign-in, phone-number sign-in, independent parent contact verification, account recovery, profile photos, audit history for important changes, outbound SMS/email delivery, student-to-account linking, and several timetable/calendar workflows remain incomplete or require further verification.
+Verifying an email address or phone number only proves control of that contact channel. The school must independently confirm that a person is authorized to access a student's records. Configure least-privilege access, data retention, backup access controls, and incident-response procedures before a real-school pilot.
 
-## Required pre-release checklist
+### P2 — Some planned product capabilities remain unfinished or unverified
 
-- [ ] Choose persistent storage (managed database or supported persistent disk) and document its cost/owner.
-- [ ] Back up existing data and successfully test restore. The new utility's local tests are not proof that a live Render backup can be restored.
-- [ ] Verify login-throttle tests pass and that attempt records persist across restarts/workers.
-- [ ] Expand cross-school and role-boundary tests for every sensitive route.
-- [ ] Verify all required environment variables without exposing their values.
-- [ ] Run the latest CI checks and resolve all failures.
-- [ ] Test the rebuild in staging with fictional data. No staging deployment has been verified yet.
-- [ ] Configure SMTP, Twilio, and Google OAuth credentials and test each configured flow in staging.
-- [ ] Verify parent/guardian authorization workflow and privacy controls.
-- [ ] Review migration, rollback, logging, and incident recovery steps.
-- [ ] Obtain explicit approval before merging and changing the live service.
+Profile-photo management, full audit history, reliable outbound notifications, complete timetable/calendar workflows, and several account/guardian administration flows need implementation or explicit testing against the master requirements. A page existing does not mean its workflow is complete.
 
-**Current status:** The staging service has been created and its initial deployment succeeded. New authentication and verification code has been added, but latest tests must pass and provider flows still need configuration and end-to-end checks. Production storage, live Render configuration, and a complete security review remain blockers. A passing unit-test suite is necessary, but it does not by itself establish production readiness.
+## Release checklist
+
+- [ ] Account owner approves the persistent-storage provider and any recurring cost.
+- [ ] Configure production persistent storage without using `/tmp` or the ephemeral application filesystem.
+- [ ] Back up the current production database and successfully restore it to a separate test target.
+- [ ] Verify migrations and rollback using a sanitized copy of the production database.
+- [ ] Configure and privately store a stable production `SECRET_KEY` and database path.
+- [ ] Change the live startup command only after storage and restore are verified.
+- [ ] Configure SMTP/Twilio/Google OAuth only for providers the school intends to use; test each flow in staging.
+- [ ] Verify login throttling and client-IP handling behind Render's proxy.
+- [ ] Finish route-by-route role and school-isolation review; test sensitive create/update/delete paths.
+- [ ] Review privacy, guardian approval, backups, logs, retention, and incident response.
+- [ ] Run latest CI and staging checks again after any configuration or code changes.
+- [ ] Obtain explicit approval before merging the draft PR or changing production.
+
+## Current status
+
+**Latest CI: PASS. Latest staging deployment: LIVE and HTTP 200 checks observed. Production release: BLOCKED.** The remaining P0 storage and startup tasks require a storage decision and safe production configuration; they cannot be honestly marked complete by changing documentation or relying on staging's temporary database.
