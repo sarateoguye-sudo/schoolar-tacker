@@ -73,6 +73,15 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Email or password is incorrect", response.data)
 
+    def test_repeated_failed_logins_are_temporarily_throttled(self):
+        for _ in range(scholar_app.LOGIN_MAX_ATTEMPTS):
+            response = self.login("admin@example.test", "wrong-password")
+            self.assertEqual(response.status_code, 200)
+        blocked = self.login("admin@example.test", "a-long-test-password")
+        self.assertEqual(blocked.status_code, 200)
+        self.assertIn(b"temporarily unavailable", blocked.data)
+        self.assertEqual(self.client.get("/dashboard").status_code, 302)
+
     def test_teacher_cannot_open_admin_area(self):
         self.login("teacher@example.test", "another-long-test-password")
         self.assertEqual(self.client.get("/admin").status_code, 403)
