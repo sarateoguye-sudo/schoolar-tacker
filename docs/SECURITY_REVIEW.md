@@ -15,6 +15,8 @@ The feature branch is substantially ahead of `main`. The current Render service 
 - Added a database trigger to enforce a maximum of two parent/guardian links per student, even if a future code path bypasses the administrator form.
 - Added database-level checks that guardian links reference an active student and parent in the same school and are created by an active administrator of that school.
 - Added a regression test for the database-level two-guardian limit.
+- Added a SQLite backup/restore utility that validates backups, verifies integrity, and refuses to overwrite existing backup or restore files; added fictional-record tests for successful restore and safety failures.
+- Added cross-school regression tests for teacher attendance/academic assignment access, parent access to unlinked children, calendar school separation, and student creation in another school's class.
 - Changed production configuration to refuse startup without a configured `SECRET_KEY`, and to default session cookies to Secure when the app detects a production environment.
 - Confirmed GitHub Actions passed on earlier commits. The latest commit must pass its own checks before it can be considered verified.
 
@@ -22,7 +24,7 @@ The feature branch is substantially ahead of `main`. The current Render service 
 
 ### P0 — Persistent data storage and recovery not verified
 
-The app defaults to `scholar_tracker.db` (SQLite). The Render service is on the free plan, and a persistent disk or external database has not been verified. Do not enter real student records or deploy the rebuild until a persistent database/storage plan exists and a backup-and-restore test succeeds.
+The app defaults to `scholar_tracker.db` (SQLite). The Render service is on the free plan, no Render PostgreSQL database is configured, and a persistent disk has not been verified. A backup/restore utility and local fictional-data tests have been added, but no production backup has been restored and no persistent Render storage has been established. Do not enter real student records or deploy the rebuild until a persistent database/storage plan exists and a backup-and-restore test succeeds.
 
 ### P0 — The current Render start command does not initialise the rebuild database
 
@@ -38,7 +40,7 @@ The administrator's creation of a parent-child link is recorded as verification,
 
 ### P1 — School data isolation needs broader verification
 
-The current tests cover selected role and school boundaries, not every route and every data relationship. Before production, add systematic cross-school tests for attendance, academic results, seating plans, timetables, notifications, parent links, and all create/update/delete operations. Database relationships should enforce school consistency wherever feasible.
+The current tests now cover selected cross-school boundaries for attendance assignments, academic assignments, unlinked parent access, calendar visibility, and student creation. They do not yet cover every role, seating plans, timetables, notifications, parent-link mutations, or every create/update/delete path. Continue expanding the matrix before production. Database relationships should enforce school consistency wherever feasible.
 
 ### P1 — Deployment configuration must be checked before release
 
@@ -51,12 +53,12 @@ Google sign-in, phone-number sign-in, independent parent contact verification, a
 ## Required pre-release checklist
 
 - [ ] Choose persistent storage (managed database or supported persistent disk) and document its cost/owner.
-- [ ] Back up existing data and successfully test restore.
+- [ ] Back up existing data and successfully test restore. The new utility's local tests are not proof that a live Render backup can be restored.
 - [ ] Verify login-throttle tests pass and that attempt records persist across restarts/workers.
 - [ ] Expand cross-school and role-boundary tests for every sensitive route.
 - [ ] Verify all required environment variables without exposing their values.
 - [ ] Run the latest CI checks and resolve all failures.
-- [ ] Test the rebuild in staging with fictional data.
+- [ ] Test the rebuild in staging with fictional data. No staging deployment has been verified yet.
 - [ ] Verify parent/guardian authorization workflow and privacy controls.
 - [ ] Review migration, rollback, logging, and incident recovery steps.
 - [ ] Obtain explicit approval before merging and changing the live service.
