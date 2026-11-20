@@ -149,3 +149,22 @@ Track each feature as **Not Started**, **In Progress**, **Implemented**, or **Te
 - [Repository](https://github.com/sarateoguye-sudo/schoolar-tacker)
 - [Rebuild branch](https://github.com/sarateoguye-sudo/schoolar-tacker/tree/scholar-tracker-rebuild)
 - [Complete master requirements](docs/MASTER_REQUIREMENTS.md)
+
+
+## SQLite backup and restore utility
+
+The repository includes `scripts/backup_restore_db.py` for **local or controlled SQLite backup operations**. It verifies the database with SQLite's `quick_check`, writes backups to a new path, and refuses to overwrite existing backup or restore target files.
+
+Examples (run from the repository root):
+
+```bash
+python scripts/backup_restore_db.py verify /path/to/scholar_tracker.db
+python scripts/backup_restore_db.py backup /path/to/scholar_tracker.db /secure-backups/scholar-tracker-2026-11-20.sqlite3
+python scripts/backup_restore_db.py restore /secure-backups/scholar-tracker-2026-11-20.sqlite3 /path/to/empty-restore-target.sqlite3
+```
+
+Use a private directory outside the Git repository, restrict file permissions, and encrypt backups before moving them off the machine. Never place real student records in GitHub. Test restoration into a **separate empty target path** before relying on a backup. This utility does not schedule backups, transfer them off-site, or configure Render persistent storage by itself.
+
+## Cross-school regression tests
+
+Run the suite with `python -m unittest discover -s tests -v`. The fictional-data isolation tests cover teacher access to another school's assignment, parent access to an unlinked child, calendar separation, and preventing an administrator from adding a student to another school's class. These tests are regression checks, not a substitute for a full independent security review.
