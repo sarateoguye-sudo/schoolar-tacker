@@ -7,6 +7,7 @@ import hmac
 import os
 import secrets
 import sqlite3
+import time
 from functools import wraps
 from pathlib import Path
 
@@ -17,6 +18,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATABASE = BASE_DIR / "scholar_tracker.db"
 ALLOWED_ROLES = {"administrator", "teacher", "parent", "student"}
+LOGIN_MAX_ATTEMPTS = 10
+LOGIN_WINDOW_SECONDS = 15 * 60
+LOGIN_LOCKOUT_SECONDS = 15 * 60
 
 app = Flask(__name__)
 IS_PRODUCTION = bool(os.environ.get("RENDER")) or os.environ.get("FLASK_ENV", "").lower() == "production"
@@ -76,6 +80,12 @@ def init_db():
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (school_id) REFERENCES schools(id)
+        );
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            attempt_key TEXT PRIMARY KEY,
+            attempts INTEGER NOT NULL,
+            window_started INTEGER NOT NULL,
+            locked_until INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS classes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -411,11 +421,30 @@ def login():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
-        user = get_db().execute(
+        # Use a keyed identifier so the throttle table does not store raw email addresses.
+        # Pairing email and client address limits repeated guesses without locking the whole account.
+        client_address = request.remote_addr or "unknown"
+        attempt_key = hmac.new(
+            str(app.config["SECRET_KEY"]).encode("utf-8"),
+            f"{email}\0{client_address}".encode("utf-8"),
+            "sha256",
+        ).hexdigest()
+        db = get_db()
+        now = int(time.time())
+        attempt = db.execute(
+            "SELECT attempts, window_started, locked_until FROM login_attempts WHERE attempt_key = ?",
+            (attempt_key,),
+        ).fetchone()
+        if attempt and attempt["locked_until"] > now:
+            flash("Email or password is incorrect, or the account is temporarily unavailable. Try again later.", "error")
+            return render_template("login.html")
+        user = db.execute(
             "SELECT id, password_hash, is_active, must_change_password FROM users WHERE email = ? COLLATE NOCASE",
             (email,),
         ).fetchone()
         if user and user["is_active"] and check_password_hash(user["password_hash"], password):
+            db.execute("DELETE FROM login_attempts WHERE attempt_key = ?", (attempt_key,))
+            db.commit()
             session.clear()
             session["user_id"] = user["id"]
             session.permanent = True
@@ -423,6 +452,24 @@ def login():
             if user["must_change_password"]:
                 return redirect(url_for("change_password"))
             return redirect(url_for("dashboard"))
+
+        if attempt is None or now - attempt["window_started"] >= LOGIN_WINDOW_SECONDS:
+            attempts = 1
+            window_started = now
+        else:
+            attempts = attempt["attempts"] + 1
+            window_started = attempt["window_started"]
+        locked_until = now + LOGIN_LOCKOUT_SECONDS if attempts >= LOGIN_MAX_ATTEMPTS else 0
+        db.execute(
+            """INSERT INTO login_attempts (attempt_key, attempts, window_started, locked_until)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(attempt_key) DO UPDATE SET
+                 attempts = excluded.attempts,
+                 window_started = excluded.window_started,
+                 locked_until = excluded.locked_until""",
+            (attempt_key, attempts, window_started, locked_until),
+        )
+        db.commit()
         flash("Email or password is incorrect, or the account is inactive.", "error")
     return render_template("login.html")
 
