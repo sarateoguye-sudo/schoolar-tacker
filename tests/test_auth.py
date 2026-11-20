@@ -823,5 +823,46 @@ class AuthenticationTests(unittest.TestCase):
         response = self.client.get(f"/academic-reports?assignment_id={other_assignment_id}")
         self.assertEqual(response.status_code, 404)
 
+    def test_email_verification_token_marks_account_verified(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            token = scholar_app._token_serializer().dumps({"uid": 2, "purpose": "verify-email"})
+        response = self.client.get(f"/account/verify-email/{token}")
+        self.assertEqual(response.status_code, 200)
+        with scholar_app.app.app_context():
+            verified = scholar_app.get_db().execute("SELECT email_verified FROM users WHERE id=2").fetchone()["email_verified"]
+        self.assertEqual(verified, 1)
+
+    def test_password_reset_changes_hash_and_clears_temporary_password_flag(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("UPDATE users SET must_change_password=1 WHERE id=1")
+            db.commit()
+            token = scholar_app._token_serializer().dumps({"uid": 1, "purpose": "reset-password"})
+        page = self.client.get(f"/reset-password/{token}")
+        self.assertEqual(page.status_code, 200)
+        with self.client.session_transaction() as session:
+            csrf = session["_csrf_token"]
+        response = self.client.post(f"/reset-password/{token}", data={
+            "_csrf_token": csrf,
+            "new_password": "new-strong-password-789",
+            "confirm_password": "new-strong-password-789",
+        })
+        self.assertEqual(response.status_code, 302)
+        with scholar_app.app.app_context():
+            user = scholar_app.get_db().execute("SELECT password_hash, must_change_password FROM users WHERE id=1").fetchone()
+        self.assertTrue(check_password_hash(user["password_hash"], "new-strong-password-789"))
+        self.assertEqual(user["must_change_password"], 0)
+
+    def test_forgot_password_response_does_not_disclose_unknown_email(self):
+        page = self.client.get("/forgot-password")
+        self.assertEqual(page.status_code, 200)
+        with self.client.session_transaction() as session:
+            csrf = session["_csrf_token"]
+        response = self.client.post("/forgot-password", data={"_csrf_token": csrf, "email": "unknown@example.test"}, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"If an active account matches that email", response.data)
+        self.assertNotIn(b"unknown@example.test", response.data)
+
 if __name__ == "__main__":
     unittest.main()
