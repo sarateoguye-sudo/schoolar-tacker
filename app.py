@@ -983,13 +983,20 @@ def school_data():
                 if parent is None or student is None:
                     flash("The selected parent and student must both belong to your school.", "error")
                 else:
-                    try:
-                        db.execute("INSERT INTO student_guardians (school_id, student_id, parent_id, relationship, verified_by) VALUES (?, ?, ?, ?, ?)", (school_id, int(student_id_raw), int(parent_id_raw), relationship, g.user["id"]))
-                        db.commit()
-                        flash("Parent-child link created and recorded as administrator-verified.", "success")
-                    except sqlite3.IntegrityError:
-                        db.rollback()
-                        flash("This parent is already linked to that student.", "error")
+                    guardian_count = db.execute(
+                        "SELECT COUNT(*) FROM student_guardians WHERE student_id = ? AND school_id = ?",
+                        (int(student_id_raw), school_id),
+                    ).fetchone()[0]
+                    if guardian_count >= 2:
+                        flash("This student already has two linked parent or guardian accounts. Remove an existing link before adding another.", "error")
+                    else:
+                        try:
+                            db.execute("INSERT INTO student_guardians (school_id, student_id, parent_id, relationship, verified_by) VALUES (?, ?, ?, ?, ?)", (school_id, int(student_id_raw), int(parent_id_raw), relationship, g.user["id"]))
+                            db.commit()
+                            flash("Parent-child link created and recorded as administrator-verified.", "success")
+                        except sqlite3.IntegrityError:
+                            db.rollback()
+                            flash("This parent is already linked to that student.", "error")
         elif action == "create_teacher":
             full_name = request.form.get("teacher_name", "").strip()
             email = request.form.get("teacher_email", "").strip().lower()
