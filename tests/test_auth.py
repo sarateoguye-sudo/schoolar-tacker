@@ -68,6 +68,16 @@ class AuthenticationTests(unittest.TestCase):
         self.assertIn("/dashboard", response.headers["Location"])
         self.assertEqual(self.client.get("/dashboard").status_code, 200)
 
+    def test_verified_phone_number_can_sign_in_with_password(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("UPDATE users SET phone_number='+254700000002', phone_verified=1 WHERE email='teacher@example.test'")
+            db.commit()
+        response = self.login("+254700000002", "another-long-test-password")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/dashboard", response.headers["Location"])
+        self.assertEqual(self.client.get("/dashboard").status_code, 200)
+
     def test_wrong_password_is_rejected(self):
         response = self.login("admin@example.test", "wrong-password")
         self.assertEqual(response.status_code, 200)
