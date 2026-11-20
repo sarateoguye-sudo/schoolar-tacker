@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Account verification | Scholar Tracker</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body><header class="topbar"><a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark">ST</span><span>Scholar Tracker</span></a></header>
+<main class="container"><section class="hero"><h1>Account verification</h1><p class="intro">Parents must verify at least one contact method before a school administrator can link their account to a student.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<p class="notice" role="status">{{ message }}</p>{% endfor %}{% endwith %}
+<p>Email: <strong>{{ user.email }}</strong> — {% if email_verified %}Verified{% else %}Not verified{% endif %}</p>
+{% if not email_verified %}<form method="post" class="auth-form"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><button class="primary-button" type="submit">Send email verification link</button></form>{% endif %}
+<p>Phone verification: {% if phone_verified %}Verified{% else %}Not verified{% endif %}</p>
+<p><a href="{{ url_for('verify_phone') }}">Verify phone number</a></p><p><a href="{{ url_for('dashboard') }}">Return to dashboard</a></p></section></main></body></html>
