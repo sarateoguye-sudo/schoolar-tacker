@@ -1,5 +1,6 @@
 """Basic authentication and role-permission regression tests."""
 import os
+import sqlite3
 import tempfile
 import unittest
 
@@ -518,6 +519,31 @@ class AuthenticationTests(unittest.TestCase):
                 "SELECT COUNT(*) FROM student_guardians WHERE student_id = ?", (student_id,)
             ).fetchone()[0]
         self.assertEqual(count, 2)
+
+    def test_database_enforces_two_guardian_limit_for_direct_inserts(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO classes (school_id, name, stream, academic_year) VALUES (1, 'Form 1', 'North', '2026')")
+            class_id = db.execute("SELECT id FROM classes WHERE name = 'Form 1' AND school_id = 1").fetchone()["id"]
+            db.execute("INSERT INTO students (school_id, class_id, admission_number, full_name) VALUES (1, ?, 'DB-GUARD-001', 'Database Guardian Child')", (class_id,))
+            student_id = db.execute("SELECT id FROM students WHERE admission_number = 'DB-GUARD-001'").fetchone()["id"]
+            for index in range(1, 4):
+                db.execute(
+                    "INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (1, ?, ?, 'parent', ?)",
+                    (f"Database Guardian {index}", f"db-guardian{index}@example.test", generate_password_hash("guardian-long-password-123")),
+                )
+            parent_ids = [row["id"] for row in db.execute("SELECT id FROM users WHERE email LIKE 'db-guardian%@example.test' ORDER BY id").fetchall()]
+            for parent_id in parent_ids[:2]:
+                db.execute(
+                    "INSERT INTO student_guardians (school_id, student_id, parent_id, relationship, verified_by) VALUES (1, ?, ?, 'Guardian', 1)",
+                    (student_id, parent_id),
+                )
+            with self.assertRaises(sqlite3.IntegrityError):
+                db.execute(
+                    "INSERT INTO student_guardians (school_id, student_id, parent_id, relationship, verified_by) VALUES (1, ?, ?, 'Guardian', 1)",
+                    (student_id, parent_ids[2]),
+                )
+            db.rollback()
 
     def test_absence_notification_is_private_deduplicated_and_corrected(self):
         class_id, assignment_id = self.create_assignment_fixture()
