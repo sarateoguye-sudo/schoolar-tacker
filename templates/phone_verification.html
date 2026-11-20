@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Phone verification | Scholar Tracker</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body><header class="topbar"><a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark">ST</span><span>Scholar Tracker</span></a></header>
+<main class="container"><section class="hero"><h1>Verify your phone number</h1><p class="intro">Use international format, for example +2547XXXXXXXX. SMS verification requires the administrator to configure Twilio credentials.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<p class="notice" role="status">{{ message }}</p>{% endfor %}{% endwith %}
+<p>Current status: {% if phone_verified %}Verified{% else %}Not verified{% endif %}</p>
+<form method="post" class="auth-form"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="send"><label for="phone_number">Phone number</label><input id="phone_number" name="phone_number" type="tel" value="{{ phone_number or '' }}" placeholder="+2547XXXXXXXX" required><button class="primary-button" type="submit">Send code by SMS</button></form>
+<form method="post" class="auth-form"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="confirm"><label for="code">6-digit verification code</label><input id="code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required><button class="primary-button" type="submit">Verify code</button></form>
+<p><a href="{{ url_for('send_email_verification') }}">Verify email instead</a></p><p><a href="{{ url_for('dashboard') }}">Return to dashboard</a></p></section></main></body></html>
