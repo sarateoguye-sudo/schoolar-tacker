@@ -119,6 +119,18 @@ The tests use a temporary database and sample accounts; they do not need real sc
 
 The default database is `scholar_tracker.db`. Do not commit database files or real student records to GitHub. Use sample data only while developing.
 
+## Render deployment gate
+
+The rebuild is **not ready to deploy with the current live Render configuration**. It needs a verified persistent database or mounted persistent disk before any real school data is stored.
+
+The repository includes `render-start.sh`, which initializes the schema before starting Gunicorn. If and only if persistent storage has been configured and tested, configure Render with:
+
+- **Build command:** `pip install -r requirements.txt gunicorn`
+- **Start command:** `bash render-start.sh`
+- **Environment:** set a stable secret `SECRET_KEY` and set `SCHOLAR_TRACKER_DB` to the database file path on the persistent mount.
+
+Do not point `SCHOLAR_TRACKER_DB` at the default ephemeral application filesystem for production data. Back up the existing database and test restoration before switching services. The current live service has not been switched to this branch.
+
 ## Security rules
 
 - Never commit passwords, secret keys, API keys, private student records, or production database files.
