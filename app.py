@@ -649,10 +649,10 @@ def verify_phone():
 def forgot_password():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
-        user = get_db().execute("SELECT id, email, is_active FROM users WHERE email=? COLLATE NOCASE", (email,)).fetchone()
+        user = get_db().execute("SELECT id, email, is_active, password_hash FROM users WHERE email=? COLLATE NOCASE", (email,)).fetchone()
         # Keep the response identical for known and unknown addresses.
         if user and user["is_active"]:
-            token = _token_serializer().dumps({"uid": user["id"], "purpose": "reset-password"})
+            token = _token_serializer().dumps({"uid": user["id"], "purpose": "reset-password", "password_hash": user["password_hash"]})
             link = url_for("reset_password", token=token, _external=True)
             _send_email(user["email"], "Reset your Scholar Tracker password",
                         f"A password reset was requested for your account. The link expires in 30 minutes.\n\n{link}\n\nIf you did not request this, ignore this message.")
@@ -672,6 +672,12 @@ def reset_password(token):
         abort(400, description="Invalid password reset link.")
     if payload.get("purpose") != "reset-password" or not isinstance(payload.get("uid"), int):
         abort(400, description="Invalid password reset link.")
+    current_user = get_db().execute("SELECT password_hash, is_active FROM users WHERE id=?", (payload["uid"],)).fetchone()
+    if not current_user or not current_user["is_active"] or not hmac.compare_digest(
+        str(payload.get("password_hash", "")), current_user["password_hash"]
+    ):
+        flash("That reset link has already been used or is no longer valid. Request a new one.", "error")
+        return redirect(url_for("forgot_password"))
     if request.method == "POST":
         password = request.form.get("new_password", "")
         confirm = request.form.get("confirm_password", "")
