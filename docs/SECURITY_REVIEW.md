@@ -26,7 +26,7 @@ The app defaults to `scholar_tracker.db` (SQLite). The Render service is on the 
 
 ### P0 — The current Render start command does not initialise the rebuild database
 
-The rebuild calls `init_db()` when run directly or through the Flask CLI, but not when Gunicorn imports `app:app`. The current Render start command is `gunicorn --bind 0.0.0.0:$PORT app:app`. A fresh rebuild deployment could therefore start without the required tables. Resolve this with a controlled release/migration step and test it against the selected persistent database before deployment.
+The rebuild calls `init_db()` when run directly or through the Flask CLI, but not when Gunicorn imports `app:app`. The current live Render start command is `gunicorn --bind 0.0.0.0:$PORT app:app`. I added `render-start.sh`, which fails unless `SECRET_KEY` and `SCHOLAR_TRACKER_DB` are configured, initializes the schema, then starts Gunicorn. The live Render service has not been changed to use this script; test it against the selected persistent database before deployment.
 
 ### P1 — Login throttling is not implemented
 
