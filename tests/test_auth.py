@@ -838,7 +838,8 @@ class AuthenticationTests(unittest.TestCase):
             db = scholar_app.get_db()
             db.execute("UPDATE users SET must_change_password=1 WHERE id=1")
             db.commit()
-            token = scholar_app._token_serializer().dumps({"uid": 1, "purpose": "reset-password"})
+            current_hash = db.execute("SELECT password_hash FROM users WHERE id=1").fetchone()["password_hash"]
+            token = scholar_app._token_serializer().dumps({"uid": 1, "purpose": "reset-password", "password_hash": current_hash})
         page = self.client.get(f"/reset-password/{token}")
         self.assertEqual(page.status_code, 200)
         with self.client.session_transaction() as session:
