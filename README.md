@@ -168,3 +168,20 @@ Use a private directory outside the Git repository, restrict file permissions, a
 ## Cross-school regression tests
 
 Run the suite with `python -m unittest discover -s tests -v`. The fictional-data isolation tests cover teacher access to another school's assignment, parent access to an unlinked child, calendar separation, and preventing an administrator from adding a student to another school's class. These tests are regression checks, not a substitute for a full independent security review.
+
+
+## Account verification, sign-in and recovery configuration
+
+The rebuild now includes email verification links, password-reset links, optional Google sign-in for existing pre-verified accounts, and parent phone verification using Twilio SMS. These flows are code-complete but **not operational until provider credentials are configured and tested**.
+
+Configure these as private environment variables in Render (never commit them to Git):
+
+- Email delivery: `SMTP_HOST`, `SMTP_PORT` (usually `587`), `SMTP_FROM`, and where required `SMTP_USERNAME` / `SMTP_PASSWORD`.
+- Google sign-in: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Add the exact callback URL `https://YOUR-HOST/auth/google/callback` in Google Cloud Console. Google sign-in only matches an existing active account whose email has already been verified in Scholar Tracker; it does not create accounts automatically.
+- Parent SMS verification: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER`. Configure Twilio to send SMS to the relevant countries and test delivery with a test number before use.
+
+Parents must sign in with their temporary password, change it if required, and verify at least one contact method before the school can link them to a student. Account reset links and email-verification links expire after 30 minutes; SMS codes expire after 10 minutes and have a five-attempt limit. Provider delivery, abuse monitoring, and account recovery must be tested in staging before production.
+
+## Staging service
+
+A separate Render staging service is configured at https://scholar-tracker-staging.onrender.com and deploys from `scholar-tracker-rebuild`. It uses an isolated temporary SQLite path and is for fictional test data only; **it is not persistent storage and must never contain real student records**. The live service remains separate and unchanged.
