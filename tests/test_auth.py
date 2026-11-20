@@ -483,7 +483,41 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(linked["relationship"], "Guardian")
         self.assertEqual(linked["verified_by"], 1)
 
-
+    def test_student_cannot_have_more_than_two_linked_guardians(self):
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("INSERT INTO classes (school_id, name, stream, academic_year) VALUES (1, 'Form 2', 'West', '2026')")
+            class_id = db.execute("SELECT id FROM classes WHERE name = 'Form 2' AND school_id = 1").fetchone()["id"]
+            db.execute("INSERT INTO students (school_id, class_id, admission_number, full_name) VALUES (1, ?, 'GUARD-001', 'Guardian Limit Child')", (class_id,))
+            student_id = db.execute("SELECT id FROM students WHERE admission_number = 'GUARD-001'").fetchone()["id"]
+            for index in range(1, 4):
+                db.execute(
+                    "INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (1, ?, ?, 'parent', ?)",
+                    (f"Guardian {index}", f"guardian{index}@example.test", generate_password_hash("guardian-long-password-123")),
+                )
+            parent_ids = [row["id"] for row in db.execute("SELECT id FROM users WHERE email LIKE 'guardian%@example.test' ORDER BY id").fetchall()]
+            db.commit()
+        self.login("admin@example.test", "a-long-test-password")
+        for parent_id in parent_ids[:2]:
+            response = self.post_school_data({
+                "action": "link_parent",
+                "parent_id": str(parent_id),
+                "student_id": str(student_id),
+                "relationship": "Guardian",
+            })
+            self.assertIn(b"Parent-child link created", response.data)
+        rejected = self.post_school_data({
+            "action": "link_parent",
+            "parent_id": str(parent_ids[2]),
+            "student_id": str(student_id),
+            "relationship": "Guardian",
+        })
+        self.assertIn(b"already has two linked parent or guardian accounts", rejected.data)
+        with scholar_app.app.app_context():
+            count = scholar_app.get_db().execute(
+                "SELECT COUNT(*) FROM student_guardians WHERE student_id = ?", (student_id,)
+            ).fetchone()[0]
+        self.assertEqual(count, 2)
 
     def test_absence_notification_is_private_deduplicated_and_corrected(self):
         class_id, assignment_id = self.create_assignment_fixture()
