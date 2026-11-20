@@ -3,16 +3,23 @@
 Do not use real student data until deployment security, permissions, and privacy
 controls have been reviewed and tested.
 """
+import base64
+import hashlib
 import hmac
 import os
 import secrets
+import smtplib
 import sqlite3
 import time
+from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 import click
 from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -86,6 +93,14 @@ def init_db():
             attempts INTEGER NOT NULL,
             window_started INTEGER NOT NULL,
             locked_until INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS phone_verification_codes (
+            user_id INTEGER PRIMARY KEY,
+            code_hash TEXT NOT NULL,
+            phone_number TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         CREATE TABLE IF NOT EXISTS classes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -279,8 +294,14 @@ def init_db():
         if column not in event_columns:
             db.execute(f"ALTER TABLE school_events ADD COLUMN {column} {definition}")
     user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
-    if "must_change_password" not in user_columns:
-        db.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
+    for column, definition in (
+        ("must_change_password", "INTEGER NOT NULL DEFAULT 0"),
+        ("email_verified", "INTEGER NOT NULL DEFAULT 0"),
+        ("phone_number", "TEXT"),
+        ("phone_verified", "INTEGER NOT NULL DEFAULT 0"),
+    ):
+        if column not in user_columns:
+            db.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
     db.commit()
     db.close()
 
@@ -472,6 +493,252 @@ def login():
         db.commit()
         flash("Email or password is incorrect, or the account is inactive.", "error")
     return render_template("login.html")
+
+
+def _token_serializer():
+    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="scholar-tracker-account-security")
+
+
+def _send_email(recipient, subject, body):
+    """Send mail only when SMTP settings are configured; never log token links."""
+    host = os.environ.get("SMTP_HOST")
+    sender = os.environ.get("SMTP_FROM")
+    if not host or not sender:
+        app.logger.warning("Email delivery is not configured; account email was not sent.")
+        return False
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = sender
+    message["To"] = recipient
+    message.set_content(body)
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    username = os.environ.get("SMTP_USERNAME")
+    password = os.environ.get("SMTP_PASSWORD")
+    try:
+        with smtplib.SMTP(host, port, timeout=10) as server:
+            server.starttls()
+            if username and password:
+                server.login(username, password)
+            server.send_message(message)
+        return True
+    except (OSError, smtplib.SMTPException, ValueError):
+        app.logger.exception("Account email delivery failed.")
+        return False
+
+
+def _send_sms_twilio(phone_number, message):
+    """Send SMS through Twilio when credentials are configured."""
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
+    auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+    from_number = os.environ.get("TWILIO_FROM_NUMBER")
+    if not account_sid or not auth_token or not from_number:
+        return False
+    endpoint = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
+    payload = urlencode({"To": phone_number, "From": from_number, "Body": message}).encode()
+    credentials = base64.b64encode(f"{account_sid}:{auth_token}".encode()).decode()
+    req = Request(endpoint, data=payload, headers={
+        "Authorization": f"Basic {credentials}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    })
+    try:
+        with urlopen(req, timeout=10) as response:
+            return 200 <= response.status < 300
+    except OSError:
+        app.logger.exception("SMS delivery failed.")
+        return False
+
+
+def _valid_phone_number(value):
+    value = value.strip()
+    return value.startswith("+") and value[1:].isdigit() and 8 <= len(value[1:]) <= 15
+
+
+@app.route("/account/send-verification", methods=["GET", "POST"])
+@login_required
+def send_email_verification():
+    """Send a short-lived email verification link to the signed-in account."""
+    if request.method == "POST":
+        db = get_db()
+        user = db.execute("SELECT email, email_verified FROM users WHERE id = ?", (g.user["id"],)).fetchone()
+        if user["email_verified"]:
+            flash("Your email address is already verified.", "info")
+        else:
+            token = _token_serializer().dumps({"uid": g.user["id"], "purpose": "verify-email"})
+            link = url_for("verify_email", token=token, _external=True)
+            sent = _send_email(user["email"], "Verify your Scholar Tracker email",
+                               f"Use this link to verify your email address. It expires in 30 minutes.\n\n{link}\n\nIf you did not request this, ignore this message.")
+            if sent:
+                flash("Verification link sent. Check your email.", "success")
+            else:
+                flash("Email delivery is not configured or failed. Contact the school administrator.", "error")
+        return redirect(url_for("send_email_verification"))
+    user = get_db().execute("SELECT email, email_verified FROM users WHERE id = ?", (g.user["id"],)).fetchone()
+    return render_template("account_verification.html", user=g.user, email_verified=user["email_verified"], phone_verified=g.user["id"] and get_db().execute("SELECT phone_verified FROM users WHERE id=?", (g.user["id"],)).fetchone()["phone_verified"])
+
+
+@app.get("/account/verify-email/<token>")
+def verify_email(token):
+    try:
+        payload = _token_serializer().loads(token, max_age=1800)
+    except SignatureExpired:
+        flash("That verification link has expired. Request a new one.", "error")
+        return redirect(url_for("login"))
+    except BadSignature:
+        abort(400, description="Invalid verification link.")
+    if payload.get("purpose") != "verify-email" or not isinstance(payload.get("uid"), int):
+        abort(400, description="Invalid verification link.")
+    db = get_db()
+    db.execute("UPDATE users SET email_verified = 1 WHERE id = ? AND is_active = 1", (payload["uid"],))
+    db.commit()
+    if g.user and g.user["id"] == payload["uid"]:
+        flash("Your email address is verified.", "success")
+        return redirect(url_for("send_email_verification"))
+    return render_template("account_token_result.html", title="Email verified", message="Your email address is verified. You can now sign in.")
+
+
+@app.route("/account/verify-phone", methods=["GET", "POST"])
+@login_required
+def verify_phone():
+    if g.user["role"] != "parent":
+        abort(403)
+    db = get_db()
+    user = db.execute("SELECT phone_number, phone_verified FROM users WHERE id=?", (g.user["id"],)).fetchone()
+    if request.method == "POST":
+        action = request.form.get("action", "send")
+        if action == "send":
+            phone = request.form.get("phone_number", "").strip()
+            if not _valid_phone_number(phone):
+                flash("Enter a phone number in international format, such as +2547XXXXXXXX.", "error")
+            elif not (os.environ.get("TWILIO_ACCOUNT_SID") and os.environ.get("TWILIO_AUTH_TOKEN") and os.environ.get("TWILIO_FROM_NUMBER")):
+                flash("Phone verification is not configured yet. Contact the system administrator.", "error")
+            else:
+                code = f"{secrets.randbelow(1_000_000):06d}"
+                code_hash = hashlib.sha256(f"{app.config['SECRET_KEY']}:{g.user['id']}:{code}".encode()).hexdigest()
+                sent = _send_sms_twilio(phone, f"Your Scholar Tracker verification code is {code}. It expires in 10 minutes.")
+                if sent:
+                    db.execute("INSERT INTO phone_verification_codes(user_id, code_hash, phone_number, expires_at, attempts) VALUES (?, ?, ?, ?, 0) ON CONFLICT(user_id) DO UPDATE SET code_hash=excluded.code_hash, phone_number=excluded.phone_number, expires_at=excluded.expires_at, attempts=0",
+                               (g.user["id"], code_hash, phone, int(time.time()) + 600))
+                    db.commit()
+                    flash("Verification code sent by SMS.", "success")
+                else:
+                    flash("SMS delivery failed. Check the configured SMS service and try again.", "error")
+        elif action == "confirm":
+            code = request.form.get("code", "").strip()
+            record = db.execute("SELECT * FROM phone_verification_codes WHERE user_id=?", (g.user["id"],)).fetchone()
+            if not record or record["expires_at"] < int(time.time()) or record["attempts"] >= 5:
+                db.execute("DELETE FROM phone_verification_codes WHERE user_id=?", (g.user["id"],))
+                db.commit()
+                flash("The code expired or too many attempts were made. Request a new code.", "error")
+            else:
+                expected = hashlib.sha256(f"{app.config['SECRET_KEY']}:{g.user['id']}:{code}".encode()).hexdigest()
+                if not hmac.compare_digest(expected, record["code_hash"]):
+                    db.execute("UPDATE phone_verification_codes SET attempts=attempts+1 WHERE user_id=?", (g.user["id"],))
+                    db.commit()
+                    flash("That verification code is incorrect.", "error")
+                else:
+                    db.execute("UPDATE users SET phone_number=?, phone_verified=1 WHERE id=?", (record["phone_number"], g.user["id"]))
+                    db.execute("DELETE FROM phone_verification_codes WHERE user_id=?", (g.user["id"],))
+                    db.commit()
+                    flash("Your phone number is verified.", "success")
+        return redirect(url_for("verify_phone"))
+    return render_template("phone_verification.html", user=g.user, phone_number=user["phone_number"], phone_verified=user["phone_verified"])
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        user = get_db().execute("SELECT id, email, is_active FROM users WHERE email=? COLLATE NOCASE", (email,)).fetchone()
+        # Keep the response identical for known and unknown addresses.
+        if user and user["is_active"]:
+            token = _token_serializer().dumps({"uid": user["id"], "purpose": "reset-password"})
+            link = url_for("reset_password", token=token, _external=True)
+            _send_email(user["email"], "Reset your Scholar Tracker password",
+                        f"A password reset was requested for your account. The link expires in 30 minutes.\n\n{link}\n\nIf you did not request this, ignore this message.")
+        flash("If an active account matches that email and email delivery is available, a reset link will be sent.", "info")
+        return redirect(url_for("forgot_password"))
+    return render_template("forgot_password.html")
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    try:
+        payload = _token_serializer().loads(token, max_age=1800)
+    except SignatureExpired:
+        flash("That password reset link has expired. Request another.", "error")
+        return redirect(url_for("forgot_password"))
+    except BadSignature:
+        abort(400, description="Invalid password reset link.")
+    if payload.get("purpose") != "reset-password" or not isinstance(payload.get("uid"), int):
+        abort(400, description="Invalid password reset link.")
+    if request.method == "POST":
+        password = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+        if len(password) < 12 or password != confirm:
+            flash("Passwords must match and contain at least 12 characters.", "error")
+        else:
+            db = get_db()
+            db.execute("UPDATE users SET password_hash=?, must_change_password=0 WHERE id=? AND is_active=1",
+                       (generate_password_hash(password), payload["uid"]))
+            db.execute("DELETE FROM login_attempts")
+            db.commit()
+            flash("Password updated. Please sign in.", "success")
+            return redirect(url_for("login"))
+    return render_template("reset_password.html")
+
+
+@app.get("/auth/google")
+def google_login():
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        flash("Google sign-in is not configured yet.", "error")
+        return redirect(url_for("login"))
+    try:
+        from authlib.integrations.flask_client import OAuth
+    except ImportError:
+        app.logger.error("Authlib is missing; Google sign-in is unavailable.")
+        abort(503)
+    oauth = OAuth(app)
+    oauth.register(name="google", client_id=client_id, client_secret=client_secret,
+                   server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+                   client_kwargs={"scope": "openid email profile"})
+    return oauth.google.authorize_redirect(url_for("google_callback", _external=True))
+
+
+@app.get("/auth/google/callback")
+def google_callback():
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        return redirect(url_for("login"))
+    try:
+        from authlib.integrations.flask_client import OAuth
+    except ImportError:
+        abort(503)
+    oauth = OAuth(app)
+    oauth.register(name="google", client_id=client_id, client_secret=client_secret,
+                   server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+                   client_kwargs={"scope": "openid email profile"})
+    try:
+        token = oauth.google.authorize_access_token()
+        profile = token.get("userinfo") or oauth.google.userinfo()
+    except Exception:
+        app.logger.exception("Google sign-in failed.")
+        flash("Google sign-in could not be completed.", "error")
+        return redirect(url_for("login"))
+    email = (profile.get("email") or "").strip().lower()
+    if not email or not profile.get("email_verified"):
+        flash("Google must confirm the email address before sign-in.", "error")
+        return redirect(url_for("login"))
+    user = get_db().execute("SELECT id, is_active FROM users WHERE email=? COLLATE NOCASE AND email_verified=1", (email,)).fetchone()
+    if not user or not user["is_active"]:
+        flash("No active, pre-verified Scholar Tracker account matches that Google email. Ask your school administrator.", "error")
+        return redirect(url_for("login"))
+    session.clear()
+    session["user_id"] = user["id"]
+    session.permanent = True
+    return redirect(url_for("dashboard"))
 
 
 @app.post("/logout")
@@ -1065,6 +1332,13 @@ def school_data():
                 if parent is None or student is None:
                     flash("The selected parent and student must both belong to your school.", "error")
                 else:
+                    verified_parent = db.execute(
+                        "SELECT email_verified, phone_verified FROM users WHERE id = ? AND school_id = ? AND role = 'parent' AND is_active = 1",
+                        (int(parent_id_raw), school_id),
+                    ).fetchone()
+                    if not verified_parent or not (verified_parent["email_verified"] or verified_parent["phone_verified"]):
+                        flash("Verify the parent's email address or phone number before linking them to a student.", "error")
+                        return redirect(url_for("school_data"))
                     guardian_count = db.execute(
                         "SELECT COUNT(*) FROM student_guardians WHERE student_id = ? AND school_id = ?",
                         (int(student_id_raw), school_id),
