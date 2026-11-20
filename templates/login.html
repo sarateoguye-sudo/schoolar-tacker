@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign in | Scholar Tracker</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body><header class="topbar"><a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">ST</span><span>Scholar Tracker</span></a><span class="status">SECURE SIGN-IN</span></header>
+<main class="container"><section class="hero"><p class="eyebrow">AUTHORISED USERS ONLY</p><h1>Sign in to <span>Scholar Tracker</span></h1><p class="intro">Use the account details provided by your school administrator.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<p class="notice" role="status">{{ message }}</p>{% endfor %}{% endwith %}
+<form method="post" class="auth-form">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+<label for="email">Email address or verified phone number</label><input id="email" name="email" type="text" autocomplete="username" placeholder="you@example.com or +2547XXXXXXXX" required maxlength="254">
+<label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
+<button class="primary-button" type="submit">Sign in</button>
+</form>
+<p><a href="{{ url_for('forgot_password') }}">Forgot your password?</a></p>
+{% if google_sign_in_enabled %}<p><a class="primary-button" href="{{ url_for('google_login') }}">Continue with Google</a></p>{% endif %}
+<p class="notice">Parents: email or phone verification is required before a school can link your account to a student.</p></section></main><footer><span>Scholar Tracker</span><span>Do not share your password.</span></footer></body></html>

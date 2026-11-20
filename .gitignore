@@ -33,3 +33,19 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Python and local development
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Local databases and test artifacts
+*.sqlite
+*.sqlite3
+*.db
+.coverage
+.pytest_cache/

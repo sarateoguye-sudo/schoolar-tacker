@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Scholar Tracker school management project.">
+  <title>Scholar Tracker | School Management</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">ST</span><span>Scholar Tracker</span></a>
+    <span class="status">DEVELOPMENT VERSION</span>
+  </header>
+  <main class="container">
+    <section class="hero">
+      <p class="eyebrow">SCHOOL MANAGEMENT • KENYA</p>
+      <h1>Better school records.<br><span>Stronger school–home connections.</span></h1>
+      <p class="intro">A developing workspace for authorised school administrators, teachers and verified parents to manage attendance, student records and school activities.</p>
+      <div class="hero-actions">
+        <a class="primary-button" href="{{ url_for('login') }}">Sign in</a>
+        <a class="secondary-button" href="https://github.com/sarateoguye-sudo/schoolar-tacker/tree/scholar-tracker-rebuild">View source code ↗</a>
+      </div>
+      <p class="notice"><strong>Prototype:</strong> User accounts are created by the project administrator. Public sign-up is disabled. Do not enter real student information until the remaining security and privacy controls are complete.</p>
+    </section>
+    <section id="modules" class="modules">
+      <div class="section-heading"><p class="eyebrow">BUILDING IN PHASES</p><h2>Core modules</h2><p>The app is being built and tested in stages.</p></div>
+      <div class="module-grid">
+        <article class="module-card"><span class="icon">✓</span><h3>Attendance</h3><p>Planned registers by class, date and lesson, with an auditable history.</p><span class="tag">Planned</span></article>
+        <article class="module-card"><span class="icon">▦</span><h3>Students & classes</h3><p>Organise student profiles, admission numbers, classes and streams.</p><span class="tag">Foundation only</span></article>
+        <article class="module-card"><span class="icon">⌂</span><h3>Parents' portal</h3><p>Give verified guardians access only to their linked children's information.</p><span class="tag">Planned</span></article>
+        <article class="module-card"><span class="icon">▣</span><h3>School calendar</h3><p>Publish term dates, examinations, meetings and school events.</p><span class="tag">Planned</span></article>
+        <article class="module-card"><span class="icon">▤</span><h3>Seating plans</h3><p>Manage classroom layouts and publish approved seating arrangements.</p><span class="tag">Planned</span></article>
+        <article class="module-card"><span class="icon">🔒</span><h3>Security & privacy</h3><p>Sign-in, hashed passwords, basic role checks and form protection are the current milestone.</p><span class="tag">In progress</span></article>
+      </div>
+    </section>
+  </main>
+  <footer><span>Scholar Tracker</span><span>Early development • Protect student privacy</span></footer>
+</body>
+</html>
