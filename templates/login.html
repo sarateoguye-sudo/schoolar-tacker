@@ -5,7 +5,7 @@
 {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<p class="notice" role="status">{{ message }}</p>{% endfor %}{% endwith %}
 <form method="post" class="auth-form">
 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-<label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="username" required maxlength="254">
+<label for="email">Email address or verified phone number</label><input id="email" name="email" type="text" autocomplete="username" placeholder="you@example.com or +2547XXXXXXXX" required maxlength="254">
 <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
 <button class="primary-button" type="submit">Sign in</button>
 </form>
