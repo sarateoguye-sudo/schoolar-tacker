@@ -303,6 +303,10 @@ def init_db():
     ):
         if column not in user_columns:
             db.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_verified_phone_unique "
+        "ON users(phone_number) WHERE phone_verified = 1 AND phone_number IS NOT NULL"
+    )
     db.commit()
     db.close()
 
@@ -640,10 +644,19 @@ def verify_phone():
                     db.commit()
                     flash("That verification code is incorrect.", "error")
                 else:
-                    db.execute("UPDATE users SET phone_number=?, phone_verified=1 WHERE id=?", (record["phone_number"], g.user["id"]))
-                    db.execute("DELETE FROM phone_verification_codes WHERE user_id=?", (g.user["id"],))
-                    db.commit()
-                    flash("Your phone number is verified.", "success")
+                    existing_owner = db.execute(
+                        "SELECT id FROM users WHERE phone_number=? AND phone_verified=1 AND id<>?",
+                        (record["phone_number"], g.user["id"]),
+                    ).fetchone()
+                    if existing_owner:
+                        db.execute("DELETE FROM phone_verification_codes WHERE user_id=?", (g.user["id"],))
+                        db.commit()
+                        flash("That phone number is already verified on another account. Use a different number.", "error")
+                    else:
+                        db.execute("UPDATE users SET phone_number=?, phone_verified=1 WHERE id=?", (record["phone_number"], g.user["id"]))
+                        db.execute("DELETE FROM phone_verification_codes WHERE user_id=?", (g.user["id"],))
+                        db.commit()
+                        flash("Your phone number is verified.", "success")
         return redirect(url_for("verify_phone"))
     return render_template("phone_verification.html", user=g.user, phone_number=user["phone_number"], phone_verified=user["phone_verified"])
 
