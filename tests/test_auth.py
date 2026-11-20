@@ -478,6 +478,17 @@ class AuthenticationTests(unittest.TestCase):
             parent = db.execute("SELECT id, must_change_password FROM users WHERE email = 'portal-parent@example.test'").fetchone()
         self.assertIsNotNone(parent)
         self.assertEqual(parent["must_change_password"], 1)
+        blocked_link = self.post_school_data({
+            "action": "link_parent",
+            "parent_id": str(parent["id"]),
+            "student_id": str(student_id),
+            "relationship": "Guardian",
+        })
+        self.assertIn(b"Verify the parent's email address or phone number", blocked_link.data)
+        with scholar_app.app.app_context():
+            db = scholar_app.get_db()
+            db.execute("UPDATE users SET email_verified=1 WHERE id=?", (parent["id"],))
+            db.commit()
         link_response = self.post_school_data({
             "action": "link_parent",
             "parent_id": str(parent["id"]),
