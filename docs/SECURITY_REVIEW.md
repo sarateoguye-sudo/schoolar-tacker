@@ -28,9 +28,9 @@ The app defaults to `scholar_tracker.db` (SQLite). The Render service is on the 
 
 The rebuild calls `init_db()` when run directly or through the Flask CLI, but not when Gunicorn imports `app:app`. The current live Render start command is `gunicorn --bind 0.0.0.0:$PORT app:app`. I added `render-start.sh`, which fails unless `SECRET_KEY` and `SCHOLAR_TRACKER_DB` are configured, initializes the schema, then starts Gunicorn. The live Render service has not been changed to use this script; test it against the selected persistent database before deployment.
 
-### P1 — Login throttling is not implemented
+### P1 — Login throttling added, but production behavior still needs verification
 
-The login handler does not currently enforce a verified rate limit. Add and test a rate limiter backed by shared persistent storage before exposing school accounts to the public internet. Do not rely on a per-process in-memory limit for a multi-worker deployment.
+The rebuild now tracks failed login attempts in the database and temporarily blocks repeated guesses for the same keyed email/client-address pair after 10 failures in a 15-minute window. A regression test has been added. Before production, verify the latest test run, confirm that the database is persistent and shared by all application workers, and confirm that the client address used behind Render's proxy is trustworthy.
 
 ### P1 — Guardian identity verification is incomplete
 
@@ -52,7 +52,7 @@ Google sign-in, phone-number sign-in, independent parent contact verification, a
 
 - [ ] Choose persistent storage (managed database or supported persistent disk) and document its cost/owner.
 - [ ] Back up existing data and successfully test restore.
-- [ ] Add and test shared-storage login throttling.
+- [ ] Verify login-throttle tests pass and that attempt records persist across restarts/workers.
 - [ ] Expand cross-school and role-boundary tests for every sensitive route.
 - [ ] Verify all required environment variables without exposing their values.
 - [ ] Run the latest CI checks and resolve all failures.
