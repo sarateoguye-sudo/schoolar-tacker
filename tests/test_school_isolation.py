@@ -67,6 +67,15 @@ class SchoolIsolationTests(unittest.TestCase):
             db.execute(
                 "INSERT INTO school_events (school_id, title, event_date, event_type, audience) VALUES (2, 'Beta private event', '2026-11-25', 'Exam', 'Everyone')"
             )
+            db.execute(
+                "INSERT INTO seating_plans (id, school_id, class_id, title, rows_count, columns_count, status, created_by) VALUES (2, 2, 2, 'Beta private plan', 2, 2, 'published', 4)"
+            )
+            db.execute(
+                "INSERT INTO timetable_entries (school_id, assignment_id, weekday, start_time, end_time, room, created_by) VALUES (2, 2, 0, '08:00', '08:40', 'Beta Room', 4)"
+            )
+            db.execute(
+                "INSERT INTO notifications (user_id, school_id, notification_type, title, message) VALUES (6, 2, 'private-test', 'Beta private notice', 'Beta-only notification content')"
+            )
             db.commit()
         self.client = scholar_app.app.test_client()
 
@@ -111,6 +120,24 @@ class SchoolIsolationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Alpha private event", response.data)
         self.assertNotIn(b"Beta private event", response.data)
+
+    def test_teacher_cannot_open_another_schools_published_seating_plan(self):
+        self.login("alpha-teacher@example.test")
+        self.assertEqual(self.client.get("/seating-plan/2").status_code, 404)
+
+    def test_teacher_timetable_does_not_show_another_schools_lessons(self):
+        self.login("alpha-teacher@example.test")
+        response = self.client.get("/teacher/timetable")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(b"Beta Room", response.data)
+        self.assertNotIn(b"Science", response.data)
+
+    def test_notification_inbox_does_not_show_another_users_or_schools_notice(self):
+        self.login("alpha-parent@example.test")
+        response = self.client.get("/notifications")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(b"Beta private notice", response.data)
+        self.assertNotIn(b"Beta-only notification content", response.data)
 
     def test_admin_cannot_create_student_in_another_schools_class(self):
         self.login("alpha-admin@example.test")
