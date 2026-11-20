@@ -513,7 +513,7 @@ class AuthenticationTests(unittest.TestCase):
             student_id = db.execute("SELECT id FROM students WHERE admission_number = 'GUARD-001'").fetchone()["id"]
             for index in range(1, 4):
                 db.execute(
-                    "INSERT INTO users (school_id, full_name, email, role, password_hash) VALUES (1, ?, ?, 'parent', ?)",
+                    "INSERT INTO users (school_id, full_name, email, role, password_hash, email_verified) VALUES (1, ?, ?, 'parent', ?, 1)",
                     (f"Guardian {index}", f"guardian{index}@example.test", generate_password_hash("guardian-long-password-123")),
                 )
             parent_ids = [row["id"] for row in db.execute("SELECT id FROM users WHERE email LIKE 'guardian%@example.test' ORDER BY id").fetchall()]
