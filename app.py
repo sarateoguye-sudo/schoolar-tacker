@@ -19,12 +19,19 @@ DEFAULT_DATABASE = BASE_DIR / "scholar_tracker.db"
 ALLOWED_ROLES = {"administrator", "teacher", "parent", "student"}
 
 app = Flask(__name__)
+IS_PRODUCTION = bool(os.environ.get("RENDER")) or os.environ.get("FLASK_ENV", "").lower() == "production"
+configured_secret = os.environ.get("SECRET_KEY")
+if IS_PRODUCTION and not configured_secret:
+    raise RuntimeError("SECRET_KEY must be configured in production; refusing to start with a temporary session secret.")
+
 app.config.update(
-    SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
+    SECRET_KEY=configured_secret or secrets.token_hex(32),
     DATABASE=os.environ.get("SCHOLAR_TRACKER_DB", str(DEFAULT_DATABASE)),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "0") == "1",
+    SESSION_COOKIE_SECURE=os.environ.get(
+        "COOKIE_SECURE", "1" if IS_PRODUCTION else "0"
+    ) == "1",
     PERMANENT_SESSION_LIFETIME=60 * 60 * 8,
 )
 
@@ -222,6 +229,34 @@ def init_db():
             UNIQUE (assignment_id, weekday, start_time, end_time)
         );
         CREATE INDEX IF NOT EXISTS idx_timetable_school_day ON timetable_entries(school_id, weekday, start_time);
+        """
+    )
+    # Enforce guardian relationships at the database layer as well as in the UI route.
+    # This protects the two-guardian limit and school boundaries if another code path is added.
+    db.executescript(
+        """
+        CREATE TRIGGER IF NOT EXISTS validate_student_guardian_insert
+        BEFORE INSERT ON student_guardians
+        BEGIN
+            SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM students
+                WHERE id = NEW.student_id AND school_id = NEW.school_id AND is_active = 1
+            ) THEN RAISE(ABORT, 'guardian_student_school_mismatch') END;
+            SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM users
+                WHERE id = NEW.parent_id AND school_id = NEW.school_id
+                  AND role = 'parent' AND is_active = 1
+            ) THEN RAISE(ABORT, 'guardian_parent_school_mismatch') END;
+            SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM users
+                WHERE id = NEW.verified_by AND school_id = NEW.school_id
+                  AND role = 'administrator' AND is_active = 1
+            ) THEN RAISE(ABORT, 'guardian_verifier_not_school_admin') END;
+            SELECT CASE WHEN (
+                SELECT COUNT(*) FROM student_guardians
+                WHERE student_id = NEW.student_id AND school_id = NEW.school_id
+            ) >= 2 THEN RAISE(ABORT, 'maximum_two_guardians') END;
+        END;
         """
     )
     event_columns = {row[1] for row in db.execute("PRAGMA table_info(school_events)")}
