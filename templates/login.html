@@ -8,4 +8,7 @@
 <label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="username" required maxlength="254">
 <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
 <button class="primary-button" type="submit">Sign in</button>
-</form><p class="notice">Forgot your password? Contact your administrator. Password recovery is not implemented yet.</p></section></main><footer><span>Scholar Tracker</span><span>Do not share your password.</span></footer></body></html>
+</form>
+<p><a href="{{ url_for('forgot_password') }}">Forgot your password?</a></p>
+{% if google_sign_in_enabled %}<p><a class="primary-button" href="{{ url_for('google_login') }}">Continue with Google</a></p>{% endif %}
+<p class="notice">Parents: email or phone verification is required before a school can link your account to a student.</p></section></main><footer><span>Scholar Tracker</span><span>Do not share your password.</span></footer></body></html>
