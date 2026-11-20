@@ -484,7 +484,7 @@ class AuthenticationTests(unittest.TestCase):
             "student_id": str(student_id),
             "relationship": "Guardian",
         })
-        self.assertIn(b"Verify the parent's email address or phone number", blocked_link.data)
+        self.assertIn(b"Verify the parent&#39;s email address or phone number", blocked_link.data)
         with scholar_app.app.app_context():
             db = scholar_app.get_db()
             db.execute("UPDATE users SET email_verified=1 WHERE id=?", (parent["id"],))
