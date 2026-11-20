@@ -43,8 +43,13 @@ def backup_database(source: Path, destination: Path) -> None:
     os.close(fd)
     temporary = Path(temporary_name)
     try:
-        with sqlite3.connect(source) as src, sqlite3.connect(temporary) as dst:
+        src = sqlite3.connect(source)
+        dst = sqlite3.connect(temporary)
+        try:
             src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
         verify_database(temporary)
         os.replace(temporary, destination)
     finally:
@@ -69,8 +74,13 @@ def restore_database(backup: Path, target: Path) -> None:
     os.close(fd)
     temporary = Path(temporary_name)
     try:
-        with sqlite3.connect(backup) as src, sqlite3.connect(temporary) as dst:
+        src = sqlite3.connect(backup)
+        dst = sqlite3.connect(temporary)
+        try:
             src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
         verify_database(temporary)
         os.replace(temporary, target)
     finally:
