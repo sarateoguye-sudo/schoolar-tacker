@@ -24,6 +24,10 @@ The feature branch is substantially ahead of `main`. The current Render service 
 
 The app defaults to `scholar_tracker.db` (SQLite). The Render service is on the free plan, and a persistent disk or external database has not been verified. Do not enter real student records or deploy the rebuild until a persistent database/storage plan exists and a backup-and-restore test succeeds.
 
+### P0 — The current Render start command does not initialise the rebuild database
+
+The rebuild calls `init_db()` when run directly or through the Flask CLI, but not when Gunicorn imports `app:app`. The current Render start command is `gunicorn --bind 0.0.0.0:$PORT app:app`. A fresh rebuild deployment could therefore start without the required tables. Resolve this with a controlled release/migration step and test it against the selected persistent database before deployment.
+
 ### P1 — Login throttling is not implemented
 
 The login handler does not currently enforce a verified rate limit. Add and test a rate limiter backed by shared persistent storage before exposing school accounts to the public internet. Do not rely on a per-process in-memory limit for a multi-worker deployment.
