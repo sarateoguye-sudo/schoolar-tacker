@@ -299,6 +299,7 @@ def init_db():
         ("email_verified", "INTEGER NOT NULL DEFAULT 0"),
         ("phone_number", "TEXT"),
         ("phone_verified", "INTEGER NOT NULL DEFAULT 0"),
+        ("password_reset_version", "INTEGER NOT NULL DEFAULT 0"),
     ):
         if column not in user_columns:
             db.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
@@ -565,7 +566,7 @@ def send_email_verification():
             flash("Your email address is already verified.", "info")
         else:
             token = _token_serializer().dumps({"uid": g.user["id"], "purpose": "verify-email"})
-            link = url_for("verify_email", token=token, _external=True)
+            link = url_for("verify_email", token=token, _external=True, _scheme="https" if IS_PRODUCTION else None)
             sent = _send_email(user["email"], "Verify your Scholar Tracker email",
                                f"Use this link to verify your email address. It expires in 30 minutes.\n\n{link}\n\nIf you did not request this, ignore this message.")
             if sent:
@@ -649,11 +650,11 @@ def verify_phone():
 def forgot_password():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
-        user = get_db().execute("SELECT id, email, is_active, password_hash FROM users WHERE email=? COLLATE NOCASE", (email,)).fetchone()
+        user = get_db().execute("SELECT id, email, is_active, password_reset_version FROM users WHERE email=? COLLATE NOCASE", (email,)).fetchone()
         # Keep the response identical for known and unknown addresses.
         if user and user["is_active"]:
-            token = _token_serializer().dumps({"uid": user["id"], "purpose": "reset-password", "password_hash": user["password_hash"]})
-            link = url_for("reset_password", token=token, _external=True)
+            token = _token_serializer().dumps({"uid": user["id"], "purpose": "reset-password", "reset_version": user["password_reset_version"]})
+            link = url_for("reset_password", token=token, _external=True, _scheme="https" if IS_PRODUCTION else None)
             _send_email(user["email"], "Reset your Scholar Tracker password",
                         f"A password reset was requested for your account. The link expires in 30 minutes.\n\n{link}\n\nIf you did not request this, ignore this message.")
         flash("If an active account matches that email and email delivery is available, a reset link will be sent.", "info")
@@ -672,10 +673,8 @@ def reset_password(token):
         abort(400, description="Invalid password reset link.")
     if payload.get("purpose") != "reset-password" or not isinstance(payload.get("uid"), int):
         abort(400, description="Invalid password reset link.")
-    current_user = get_db().execute("SELECT password_hash, is_active FROM users WHERE id=?", (payload["uid"],)).fetchone()
-    if not current_user or not current_user["is_active"] or not hmac.compare_digest(
-        str(payload.get("password_hash", "")), current_user["password_hash"]
-    ):
+    current_user = get_db().execute("SELECT password_reset_version, is_active FROM users WHERE id=?", (payload["uid"],)).fetchone()
+    if not current_user or not current_user["is_active"] or payload.get("reset_version") != current_user["password_reset_version"]:
         flash("That reset link has already been used or is no longer valid. Request a new one.", "error")
         return redirect(url_for("forgot_password"))
     if request.method == "POST":
@@ -685,7 +684,7 @@ def reset_password(token):
             flash("Passwords must match and contain at least 12 characters.", "error")
         else:
             db = get_db()
-            db.execute("UPDATE users SET password_hash=?, must_change_password=0 WHERE id=? AND is_active=1",
+            db.execute("UPDATE users SET password_hash=?, must_change_password=0, password_reset_version=password_reset_version+1 WHERE id=? AND is_active=1",
                        (generate_password_hash(password), payload["uid"]))
             db.execute("DELETE FROM login_attempts")
             db.commit()
@@ -710,7 +709,7 @@ def google_login():
     oauth.register(name="google", client_id=client_id, client_secret=client_secret,
                    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
                    client_kwargs={"scope": "openid email profile"})
-    return oauth.google.authorize_redirect(url_for("google_callback", _external=True))
+    return oauth.google.authorize_redirect(url_for("google_callback", _external=True, _scheme="https" if IS_PRODUCTION else None))
 
 
 @app.get("/auth/google/callback")
